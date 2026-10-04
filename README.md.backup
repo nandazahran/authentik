@@ -98,7 +98,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 3. Unduh `docker-compose.yml` resmi Authentik.
     ```
     $ sudo mkdir -p /opt/authentik && cd /opt/authentik
-    $ sudo curl -fsSL -o docker-compose.yml https://docs.goauthentik.io/compose.yml
+    $ sudo curl -fsSL -o docker-compose.yml https://goauthentik.io/docker-compose.yml
     ```
 
 4. Buat file `.env` berisi *secret* acak (`openssl rand`).
@@ -292,7 +292,7 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 | Ukuran / kebutuhan resource | Sedang | Berat (Java) | Sangat ringan |
 | Antarmuka manajemen | Ada, modern | Ada, terkesan klasik | Minimal (file konfigurasi) |
 | Protokol | OIDC, SAML, LDAP, proxy | OIDC, SAML, LDAP | OIDC, forward auth |
-| Kesulitan instalasi | Mudah | Sedang | Sedang |
+| Kesulitan instalasi | <!-- TODO --> | <!-- TODO --> | <!-- TODO --> |
 | Cocok untuk | Homelab hingga organisasi kecil | Skala enterprise | Homelab kecil |
 
 
@@ -302,11 +302,11 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 
 1. [Authentik Documentation](https://docs.goauthentik.io/)
 2. [Docker Engine install on Debian](https://docs.docker.com/engine/install/debian/)
-3. [Caddy Documentation](https://caddyserver.com/docs/)
-4. [IT-Tools](https://github.com/CorentinTh/it-tools)
-5. [Memos Documentation](https://www.usememos.com/docs)
-6. [Keycloak Documentation](https://www.keycloak.org/documentation)
-7. [Authelia Documentation](https://www.authelia.com/)
+3. Caddy Documentation <!-- TODO: tambahkan tautan -->
+4. IT-Tools <!-- TODO: tambahkan tautan -->
+5. Memos Documentation <!-- TODO: tambahkan tautan -->
+6. Keycloak Documentation <!-- TODO: tambahkan tautan -->
+7. Authelia Documentation <!-- TODO: tambahkan tautan -->
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
 
 
