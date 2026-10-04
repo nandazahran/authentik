@@ -1,0 +1,40 @@
+# Caddyfile for the Authentik demo
+#
+# - "tls internal" makes Caddy issue certificates from its own local CA.
+#   Browsers will warn until the root certificate is trusted
+#   (it lives in the caddy_data volume: /data/caddy/pki/authorities/local/root.crt).
+# - Hostnames must resolve to the VM's IP on the machine running the browser
+#   (add them to the hosts file or to a local DNS rewrite).
+# - Edit the hostnames below if you want different names.
+#
+# TODO: verify the forward_auth block against the current Authentik docs
+#       (Caddy integration page); header names can change between versions.
+
+# ---- Authentik itself
+auth-demo.lab.local {
+	tls internal
+	reverse_proxy server:9000
+}
+
+# ---- Demo app 1: IT-Tools, protected with forward auth
+tools-demo.lab.local {
+	tls internal
+
+	# Endpoints of the embedded outpost, served by the Authentik server
+	reverse_proxy /outpost.goauthentik.io/* server:9000
+
+	# Ask Authentik "is this user logged in?" before serving the app
+	forward_auth server:9000 {
+		uri /outpost.goauthentik.io/auth/caddy
+		copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Entitlements X-Authentik-Email X-Authentik-Name X-Authentik-Uid X-Authentik-Jwt X-Authentik-Meta-Jwks X-Authentik-Meta-Outpost X-Authentik-Meta-Provider X-Authentik-Meta-App X-Authentik-Meta-Version
+		trusted_proxies private_ranges
+	}
+
+	reverse_proxy it-tools:80
+}
+
+# ---- Demo app 2: Memos, logs in through OIDC (no forward auth needed)
+memos-demo.lab.local {
+	tls internal
+	reverse_proxy memos:5230
+}

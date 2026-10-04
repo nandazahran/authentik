@@ -1,0 +1,45 @@
+# docker-compose.override.yml
+# Docker Compose merges this file automatically with the official
+# docker-compose.yml from Authentik (same directory), so the official
+# file stays untouched.
+#
+# NOTE: the service name "server" below must match the official file.
+# TODO: pin image versions (avoid :latest) before using this beyond a demo.
+
+services:
+  # Reverse proxy: HTTPS entry point + forward-auth gatekeeper
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+    # Fallback if Memos cannot reach Authentik by its public name:
+    # let containers resolve the public hostname to Caddy.
+    # networks:
+    #   default:
+    #     aliases:
+    #       - auth-demo.lab.local
+
+  # Demo app 1: static developer tools, no login of its own -> forward auth
+  it-tools:
+    image: corentinth/it-tools:latest
+    restart: unless-stopped
+
+  # Demo app 2: lightweight notes app with per-user accounts -> OIDC
+  memos:
+    image: neosmemo/memos:stable
+    restart: unless-stopped
+    volumes:
+      - memos_data:/var/opt/memos
+
+volumes:
+  caddy_data:
+  caddy_config:
+  memos_data:
