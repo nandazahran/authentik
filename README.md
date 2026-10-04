@@ -75,7 +75,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 - Disk 20 GB
 - Docker Engine dan Docker Compose plugin
 
-<!-- TODO: cocokkan dengan dokumentasi resmi -->
+
 
 #### Proses Instalasi :
 1. Buat VM (Debian) dan login menggunakan SSH.
@@ -171,7 +171,7 @@ Seluruh konfigurasi Caddy ada di [`Caddyfile`](Caddyfile). Setiap blok mewakili 
 
 Pada blok `tools-demo.lab.local`, direktif `forward_auth` membuat Caddy bertanya ke Authentik apakah pengguna sudah login sebelum permintaan diteruskan ke IT-Tools, dan menyalin header identitas (`X-Authentik-Username`, dll.) ke aplikasi.
 
-<!-- TODO: verifikasi blok forward_auth dengan halaman integrasi Caddy di dokumentasi Authentik -->
+
 <!-- TODO: opsional, pasang root CA Caddy di browser agar tidak ada peringatan sertifikat -->
 
 
@@ -285,7 +285,7 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 
 #### Perbandingan dengan Aplikasi Sejenis
 
-<!-- TODO: verifikasi setiap sel dengan dokumentasi resmi masing-masing -->
+
 
 | | Authentik | Keycloak | Authelia |
 |---|---|---|---|
