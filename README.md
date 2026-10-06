@@ -287,13 +287,20 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 
 
 
-| | Authentik | Keycloak | Authelia |
-|---|---|---|---|
-| Ukuran / kebutuhan resource | Sedang | Berat (Java) | Sangat ringan |
-| Antarmuka manajemen | Ada, modern | Ada, terkesan klasik | Minimal (file konfigurasi) |
-| Protokol | OIDC, SAML, LDAP, proxy | OIDC, SAML, LDAP | OIDC, forward auth |
-| Kesulitan instalasi | Mudah | Sedang | Sedang |
-| Cocok untuk | Homelab hingga organisasi kecil | Skala enterprise | Homelab kecil |
+| Aspek | Authentik | Auth0 |
+|---|---|---|
+| Model deployment | Self-hosted | Cloud-hosted SaaS, dikelola vendor |
+| Model harga | Edisi open-source gratis; biaya infrastruktur dan operasional sendiri | Free tier hingga 25.000 MAU (Monthly Active Users); paket berbayar berdasarkan MAU dan fitur |
+| Kontrol / kustomisasi | Kontrol penuh atas infrastruktur dan data; flow dan kebijakan fleksibel | Dashboard dan Actions untuk kustomisasi; infrastruktur dan batas platform dikelola vendor |
+| Beban operasional | Mengelola server, pembaruan, backup, dan ketersediaan sendiri | Tidak mengelola server IdP; tetap perlu konfigurasi dan integrasi aplikasi |
+| Ukuran / kebutuhan resource | Sedang | Tidak perlu server IdP sendiri; integrasi AD/LDAP memerlukan connector lokal |
+| Antarmuka manajemen | Ada, modern | Dashboard web modern |
+| Protokol | OIDC, SAML, LDAP, proxy | OIDC, SAML; integrasi AD/LDAP melalui connector, bukan penyedia LDAP untuk aplikasi |
+| Kesulitan instalasi | Mudah | Tidak perlu instalasi server IdP; konfigurasi tenant dan aplikasi |
+| Cocok untuk | Homelab hingga organisasi kecil yang sensitif biaya dan membutuhkan kontrol penuh | Tim yang membayar untuk layanan terkelola dan mengurangi beban operasional IdP |
+| Kelebihan / kekurangan | Kontrol dan kustomisasi tinggi, tetapi tim mengelola operasi sendiri | Operasi IdP ditangani vendor; dukungan enterprise dan opsi HA tersedia pada paket tertentu. Biaya mengikuti MAU, ada ketergantungan vendor, dan kustomisasi dibatasi platform |
+
+Keycloak tetap menjadi alternatif self-hosted matang berbasis Java untuk kebutuhan IAM enterprise.
 
 
 
@@ -305,9 +312,9 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 3. [Caddy Documentation](https://caddyserver.com/docs/)
 4. [IT-Tools](https://github.com/CorentinTh/it-tools)
 5. [Memos Documentation](https://www.usememos.com/docs)
-6. [Keycloak Documentation](https://www.keycloak.org/documentation)
-7. [Authelia Documentation](https://www.authelia.com/)
+6. [Auth0 Documentation](https://auth0.com/docs)
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
+
 
 
 
