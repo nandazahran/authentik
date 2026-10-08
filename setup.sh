@@ -263,10 +263,12 @@ if [ "$MODE" = tunnel ] && [ ! -f cloudflared.env ]; then
   echo "Created empty ${APP_DIR}/cloudflared.env (add TUNNEL_TOKEN=... later)"
 fi
 
-# Start ONLY the private backends. Public ingress (Caddy / cloudflared) is
+# Start the private backends, including IT-Tools: it publishes no ports and
+# is unreachable until Caddy/cloudflared start, so running it now is safe
+# (fail closed behind no ingress). Public ingress (Caddy / cloudflared) is
 # started manually after admin bootstrap, as printed in step 5/5.
 docker compose pull
-docker compose up -d server worker poznote
+docker compose up -d server worker poznote it-tools
 
 # ------------------------------------------------------------------- 5. verify
 log "5/5 Waiting for Authentik to become healthy"
@@ -293,6 +295,10 @@ Next steps:
    admin_change_me / admin — change its admin username and password NOW,
    then verify the old credentials are rejected.
 
+4) Caddy (and the tunnel connector) were NOT started by this script.
+   IT-Tools is already running but unreachable: it publishes no port and
+   only answers through Caddy behind the Authentik gate.
+
 Only after BOTH admin accounts are secured, start public ingress from
 ${APP_DIR}:
 EOF
@@ -304,8 +310,8 @@ EOF
   else
     cat <<EOF
    docker compose --profile tunnel up -d cloudflared
-   (requires the real TUNNEL_TOKEN=... in ${APP_DIR}/cloudflared.env and the
-    tunnel + hostname routes configured in the Cloudflare dashboard)
+   (the connector requires the real TUNNEL_TOKEN=... in ${APP_DIR}/cloudflared.env
+    and the tunnel + hostname routes configured in the Cloudflare dashboard)
 EOF
   fi
 else

@@ -31,7 +31,9 @@ services:
     image: ghcr.io/timothepoznanski/poznote:latest
     restart: unless-stopped
     volumes:
-      - poznote_data:/app/data
+      # Target HARUS /var/www/html/data (bukan /app/data): itu lokasi data
+      # Poznote sesuai upstream docker-compose.yml + Dockerfile-nya.
+      - poznote_data:/var/www/html/data
     environment:
       # Diisi di .env setelah provider OAuth2 dibuat di Authentik.
       # Kosong diperbolehkan sebelum OIDC dikonfigurasi.

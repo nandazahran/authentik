@@ -136,7 +136,7 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     ```
     $ sudo docker compose config --quiet
     $ sudo docker compose pull
-    $ sudo docker compose up -d server worker poznote
+    $ sudo docker compose up -d server worker poznote it-tools
     ```
     Jangan pernah mencetak `docker compose config` tanpa `--quiet` di mesin berisi secret asli. Konfirmasi Authentik sehat sebelum lanjut:
     ```
@@ -285,7 +285,7 @@ $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.co
 - `--vps` / `--tunnel`: pilih mode hosting sesuai bagian Instalasi; tiga argumen host adalah FQDN publik Anda.
 - `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`.
 
-Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan hanya backend privat** (`server`, `worker`, `poznote` — tanpa ingress publik) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
+Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan seluruh backend privat** (`server`, `worker`, `poznote`, `it-tools`) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
 
 #### Cara 2: Compose deklaratif
 Seluruh *stack* juga tergambar sebagai file deklaratif: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile — cukup `docker compose up -d` untuk mereproduksi instalasi di server baru.
@@ -364,6 +364,26 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 5. Tunjukkan kejadian tersebut di *audit log*.
 
 Tidak perlu entri *hosts file* di komputer browser dan tidak ada peringatan sertifikat: Opsi A memakai sertifikat publik ACME Caddy, Opsi B menyerahkan DNS dan TLS ke edge Cloudflare.
+
+#### Pemecahan Masalah (dari pengalaman deploy nyata)
+
+Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment Opsi B:
+
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Login IT-Tools dialihkan ke `localhost` → `ERR_CONNECTION_REFUSED` | Embedded Outpost mengira host Authentik = `http://localhost:9000` karena bootstrap lewat SSH loopback | **Applications → Outposts → authentik Embedded Outpost → Edit** → set `authentik_host` ke `https://<AUTH_PUBLIC_HOST>/` (URL penuh, trailing slash). Jangan set `authentik_host_browser`. Lihat blok "Perbaiki Embedded Outpost" di atas — ini WAJIB dicek setelah bootstrap lokal, jangan dianggap opsional |
+| Setelah login, IT-Tools menampilkan halaman "Not Found / Powered by authentik" | *Kemungkinan* (belum terverifikasi dari log): cookie sesi proxy dari percobaan saat outpost masih salah, atau *External host* provider tidak sama persis dengan hostname publik (mis. `tools.` vs `ittools.`) | Kumpulkan bukti dulu: URL lengkap di address bar browser + `sudo docker compose logs caddy server --tail=50`, dan pastikan route Cloudflare untuk host ini menunjuk `caddy:80` (bukan `server:9000`). Kandidat solusi: jendela *incognito* (cookie lama), samakan *External host* provider dengan `https://<TOOLS_PUBLIC_HOST>` persis, pastikan ketiganya identik: hostname route Cloudflare, `TOOLS_PUBLIC_HOST` di `.env`, *External host* |
+| IT-Tools `502 Bad Gateway` | Kontainer `it-tools` tidak berjalan (versi `setup.sh` lama tidak memulainya; `--profile tunnel up -d cloudflared` hanya menarik dependensinya, caddy) | `sudo docker compose up -d it-tools` (atau `up -d` penuh). `setup.sh` versi baru sudah ikut menjalankannya saat bootstrap |
+| Pengaturan Poznote (OIDC, kata sandi) hilang setiap *recreate* kontainer | (Terkini: sudah diperbaiki di repo) *mount* volume salah target — Poznote menyimpan data di `/var/www/html/data`, bukan `/app/data`; DB di-*recreate* kosong setiap kontainer dibuat ulang | Pastikan memakai `docker-compose.override.yml` versi baru (`poznote_data:/var/www/html/data`). Bila data lama tertimpa: hentikan konektor dan poznote, salin `/var/www/html/data` dari kontainer lama **sebelum** *recreate*, pulihkan ke volume, baru jalankan ulang |
+| Tombol login OIDC Poznote tidak muncul | `oidc_is_enabled()` Poznote hanya cek: toggle Enabled, Issuer terisi, dan `POZNOTE_OIDC_CLIENT_ID` terisi di environment — bukan koneksi jaringan | Tambahkan Client ID/Secret ke `.env` lalu `sudo docker compose up -d poznote`; pastikan toggle Enabled tersimpan |
+| Lupa kata sandi admin Poznote | Hash password per-profil disimpan di `master.db` | Ikuti [Lost administrator password di TROUBLESHOOTING.md upstream](https://github.com/timothepoznanski/poznote/blob/main/docs/TROUBLESHOOTING.md): set `users.password_hash = NULL` dan `password_login_disabled = 0` untuk admin tsb (henti ingress dulu), login dengan kata sandi default, **langsung ganti** |
+| HTTP publik tidak dialihkan / query string hilang setelah redirect | Rule Single Redirect belum dibuat, atau *Preserve query string* belum diaktifkan (default: nonaktif!) | Buat rule per host `http://<host>/*` → `https://<host>/${1}`, 301, dan **aktifkan** *Preserve query string* secara eksplisit sebelum Deploy |
+| `setup.sh` → `Permission denied` | File tidak *executable* (bit eksekusi hilang saat diunduh tanpa git) | `chmod +x setup.sh`. Versi repo sekarang sudah menyimpan bit executable di git |
+| Tidak bisa SSH ke VM VirtualBox (NAT default) | VirtualBox mode NAT tidak meneruskan port ke host; VM tidak punya IP yang bisa dijangkau host secara langsung | VirtualBox → VM → Settings → Network → Port Forwarding: isi **Host IP `127.0.0.1`**, Host Port `2222`, Guest Port `22`. Lalu dari host: `ssh -p 2222 user@127.0.0.1` dan bootstrap `ssh -p 2222 -N -L 9000:127.0.0.1:9000 -L 8040:127.0.0.1:8040 user@127.0.0.1`. Jangan biarkan Host IP kosong — itu mengekspos SSH ke semua antarmuka host |
+| IT-Tools tidak bisa diakses lewat `localhost` seperti Authentik/Poznote | Sesuai desain: IT-Tools tidak punya port host sama sekali (tidak ada yang perlu di-*bootstrap*), hanya bisa lewat Caddy di balik gerbang forward-auth | Akses selalu lewat `https://<TOOLS_PUBLIC_HOST>`; buat provider Proxy dulu bila belum |
+
+Aturan umum yang berulang: **hostname harus identik di tiga tempat** — route Cloudflare, `*_PUBLIC_HOST` di `.env`, dan pengaturan provider Authentik. Beda satu huruf = aliran login putus di tengah.
+
 
 
 
