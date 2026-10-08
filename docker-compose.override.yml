@@ -23,7 +23,7 @@ services:
 
   # CATATAN BLUEPRINT: mount blueprint.yaml TIDAK ada di file bersama ini.
   # Mount hanya aktif bila overlay docker-compose.blueprint.yml ada di
-  # COMPOSE_FILE — file itu ditulis otomatis oleh setup.sh (opt-in). Penyedia
+  # COMPOSE_FILE. File itu ditulis otomatis oleh setup.sh (opt-in). Penyedia
   # yang dikonfigurasi manual lewat UI tidak akan pernah ditimpa blueprint.
 
   # Demo app 1: static developer tools, no login of its own -> forward auth
@@ -36,8 +36,8 @@ services:
     image: ghcr.io/timothepoznanski/poznote:latest
     restart: unless-stopped
     volumes:
-      # Target HARUS /var/www/html/data (bukan /app/data): itu lokasi data
-      # Poznote sesuai upstream docker-compose.yml + Dockerfile-nya.
+      # Mount target: Poznote stores data at /var/www/html/data per upstream
+      # docker-compose.yml + Dockerfile.
       - poznote_data:/var/www/html/data
     environment:
       # Diisi di .env setelah provider OAuth2 dibuat di Authentik.

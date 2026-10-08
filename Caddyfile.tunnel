@@ -1,8 +1,8 @@
-# Caddyfile.tunnel — ingress untuk mode publik (Cloudflare Tunnel)
+# Caddyfile.tunnel: ingress untuk mode publik (Cloudflare Tunnel)
 #
 # Dipakai bersama docker-compose.tunnel.yml. Nama host publik dikirim lewat
 # environment variables container Caddy (bukan hardcode di sini):
-#   AUTH_PUBLIC_HOST, TOOLS_PUBLIC_HOST, POZNOTE_PUBLIC_HOST — FQDN penuh
+#   AUTH_PUBLIC_HOST, TOOLS_PUBLIC_HOST, POZNOTE_PUBLIC_HOST: FQDN penuh
 #   tanpa skema/path/port, mis. subdomain di bawah domain Cloudflare Anda.
 #
 # - cloudflared mengirim permintaan ke Caddy lewat HTTP di jaringan internal
@@ -25,13 +25,13 @@
 	}
 }
 
-# ---- Authentik
+# Authentik
 http://{$AUTH_PUBLIC_HOST} {
 	request_header -X-Forwarded-Host
 	reverse_proxy server:9000
 }
 
-# ---- IT-Tools, dilindungi forward auth
+# IT-Tools, dilindungi forward auth
 http://{$TOOLS_PUBLIC_HOST} {
 	request_header -X-Forwarded-Host
 
@@ -52,7 +52,7 @@ http://{$TOOLS_PUBLIC_HOST} {
 	}
 }
 
-# ---- Poznote, login lewat OIDC
+# Poznote, login lewat OIDC
 http://{$POZNOTE_PUBLIC_HOST} {
 	request_header -X-Forwarded-Host
 	reverse_proxy poznote:80

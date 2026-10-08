@@ -84,7 +84,7 @@ TOOLS_HOST="${HOSTS[1]}"
 POZNOTE_HOST="${HOSTS[2]}"
 
 
-# ---------------------------------------------------------------- 1. preflight
+# 1. preflight
 log "1/5 Preflight checks"
 
 [ "$(id -u)" -eq 0 ] || die "Run as root: sudo ./setup.sh"
@@ -128,7 +128,7 @@ if [ ! -f "${APP_DIR}/docker-compose.yml" ]; then
   done
 fi
 
-# ------------------------------------------------------------ 2. install docker
+# 2. install docker
 log "2/5 Installing Docker from the official apt repository"
 
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -159,7 +159,7 @@ lowest=$(printf '%s\n2.24.4\n' "$compose_version" | sort -V | head -1)
 [ "$lowest" = "2.24.4" ] \
   || die "docker-compose.vps.yml/docker-compose.tunnel.yml need Compose >= 2.24.4 (found: ${compose_version:-unknown})"
 
-# ----------------------------------------------------------------- 3. hardening
+# 3. hardening
 log "3/5 Base hardening"
 
 if [ "$HARDEN" = true ]; then
@@ -176,7 +176,7 @@ if [ "$HARDEN" = true ]; then
   else
     # Tunnel mode: no inbound web ports. cloudflared connects OUTBOUND to
     # Cloudflare on TCP/UDP 7844, already covered by 'default allow
-    # outgoing' above — no inbound 7844 rule is needed or wanted.
+    # outgoing' above. No inbound 7844 rule is needed or wanted.
     :
   fi
   ufw --force enable
@@ -188,7 +188,7 @@ else
   echo "Skipped (run with --harden to enable ufw, unattended-upgrades, fail2ban)."
 fi
 
-# ---------------------------------------------------------- 4. deploy authentik
+# 4. deploy authentik
 log "4/5 Deploying Authentik"
 
 mkdir -p "${APP_DIR}"
@@ -290,7 +290,7 @@ fi
 docker compose pull
 docker compose up -d server worker poznote it-tools
 
-# ------------------------------------------------------------------- 5. verify
+# 5. verify
 log "5/5 Waiting for Authentik to become healthy"
 
 ready=false
@@ -312,7 +312,7 @@ Next steps:
 2) Create the Authentik admin account (choose a strong password) at:
    http://localhost:9000/if/flow/initial-setup/
 3) Poznote (http://localhost:8040) still has default credentials
-   admin_change_me / admin — change its admin username and password NOW,
+   admin_change_me / admin: change its admin username and password NOW,
    then verify the old credentials are rejected.
 
 4) Caddy (and the tunnel connector) were NOT started by this script.
@@ -321,7 +321,7 @@ Next steps:
 
 5) The demo blueprint (group demo-users, IT-Tools + Poznote providers,
    embedded outpost host) is mounted at /blueprints/custom/demo.yaml. The worker
-   auto-applies it within a minute of the admin setup completing — verify
+   auto-applies it within a minute of the admin setup completing, verify
    under Admin interface > Applications: group demo-users, apps IT-Tools
    and Poznote. Poznote OIDC settings must still be enabled in its UI:
    Settings > Admin Tools > OIDC / SSO (issuer https://${AUTH_HOST}/application/o/poznote/).

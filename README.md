@@ -102,7 +102,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
     $ sudo curl -fsSL -o /opt/authentik/docker-compose.yml https://docs.goauthentik.io/compose.yml
     ```
 
-Nama host contoh di bawah (`auth.example.com`, `tools.example.com`, `poznote.example.com`) hanyalah contoh, bukan nilai harfiah. Gunakan tiga FQDN yang berbeda di domain Anda — mis. `auth.<domain>`, `tools.<domain>`, `poznote.<domain>` — dan gunakan nilainya secara konsisten di `.env`, DNS, dan pengaturan provider. Bila sebuah label sudah dipakai record lain, jangan ditimpa: pilih label lain (mis. tambah `-demo`).
+Nama host contoh di bawah (`auth.example.com`, `tools.example.com`, `poznote.example.com`) hanyalah contoh, bukan nilai harfiah. Gunakan tiga FQDN yang berbeda di domain Anda: mis. `auth.<domain>`, `tools.<domain>`, `poznote.<domain>`, dan gunakan nilainya secara konsisten di `.env`, DNS, dan pengaturan provider. Bila sebuah label sudah dipakai record lain, jangan ditimpa: pilih label lain (mis. tambah `-demo`).
 
 <!-- TODO: screenshot setiap langkah, seperti pada contoh laporan -->
 
@@ -127,12 +127,12 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
     ```
-    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) **tidak** diisi sekarang — pada jalur manual nilainya dihasilkan Authentik saat Anda membuat provider OAuth2 di bagian Cara Pemakaian, lalu disalin ke `.env`. Lalu kunci izin file secret:
+    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik (bagian Cara Pemakaian), lalu disalin ke `.env`. Lalu kunci izin file secret:
     ```
     $ sudo chmod 600 .env
     ```
 
-3. Validasi, lalu jalankan **hanya backend** dulu — Caddy belum, jadi belum ada ingress publik sama sekali:
+3. Validasi, lalu jalankan **hanya backend** dulu (Caddy belum, jadi belum ada ingress publik sama sekali):
     ```
     $ sudo docker compose config --quiet
     $ sudo docker compose pull
@@ -152,9 +152,9 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
 
     **Jangan lanjut ke langkah berikutnya sebelum kedua akun di atas selesai diganti dan kredensial bawaan Poznote terbukti tidak bisa login lagi.** Panduan MFA di bagian Konfigurasi tetap berlaku.
 
-5. Buka ingress publik di firewall VPS: izinkan inbound 80 dan 443 (Caddy + ACME) serta SSH dari jaringan administrasi. Jangan buka inbound 9000/9443/8040 — binding Docker sudah di-loopback.
+5. Buka ingress publik di firewall VPS: izinkan inbound 80 dan 443 (Caddy + ACME) serta SSH dari jaringan administrasi. Jangan buka inbound 9000/9443/8040, binding Docker sudah di-loopback.
 
-6. Jalankan stack penuh — Caddy baru mulai sekarang, setelah kredensial default tidak lagi berlaku:
+6. Jalankan stack penuh. Caddy baru mulai sekarang, setelah kredensial default tidak lagi berlaku:
     ```
     $ sudo docker compose up -d
     ```
@@ -190,7 +190,7 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
     ```
-    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) **tidak** diisi sekarang — pada jalur manual nilainya dihasilkan Authentik saat Anda membuat provider OAuth2 di bagian Cara Pemakaian, lalu disalin ke `.env`. `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
+    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik (bagian Cara Pemakaian), lalu disalin ke `.env`. `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
     ```
     $ sudo touch cloudflared.env && sudo chmod 600 cloudflared.env
     $ sudo chmod 600 .env
@@ -216,13 +216,13 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
 
     **Aktivasi tunnel dilarang sebelum kedua akun di atas selesai diganti.** Panduan MFA di bagian Konfigurasi tetap berlaku.
 
-4. Di dashboard Cloudflare (Zero Trust > Networks > Tunnels) buat satu tunnel *remotely managed* bernama `authentik-demo`. Simpan token tunnel sebagai `TUNNEL_TOKEN=<token-asli>` di `/opt/authentik/cloudflared.env` **menggunakan editor** — bukan argumen command-line atau assignment shell yang masuk riwayat shell:
+4. Di dashboard Cloudflare (Zero Trust > Networks > Tunnels) buat satu tunnel *remotely managed* bernama `authentik-demo`. Simpan token tunnel sebagai `TUNNEL_TOKEN=<token-asli>` di `/opt/authentik/cloudflared.env` **menggunakan editor**, bukan argumen command-line atau assignment shell yang masuk riwayat shell:
     ```
     $ sudo nano /opt/authentik/cloudflared.env
     ```
     Buat tiga *public hostname* di tunnel tersebut, masing-masing satu nama host pilihan Anda, *Service type* **HTTP** dengan URL `caddy:80`, tanpa path. Biarkan *HTTP Host Header override* kosong agar Host publik asli sampai ke Caddy; **jangan** aktifkan *No TLS Verify* (origin memang HTTP). Biarkan dashboard membuat CNAME untuk tiap hostname.
 
-5. **Wajib** — pastikan HTTP publik dialihkan ke HTTPS di edge. Caddyfile.tunnel melayani origin HTTP dan tidak melakukan redirect sendiri; tanpa rule ini, kredensial bisa dikirim lewat HTTP polos. Kecuali Anda sudah punya kebijakan HTTPS cakup-host yang setara di zone, buat **Single Redirect** rule untuk tiap hostname: *Request URL* wildcard `http://<host>/*`, *Target URL* `https://<host>/${1}`, status `301`, *Preserve query string* aktif. Cakupan rule hanya host-host ini; jangan mengubah kebijakan HTTPS layanan lain di zone. Tunggu *edge certificate* tiap hostname aktif sebelum langkah 6. Tidak ada layer login Cloudflare Access tambahan — autentikasi demo tetap di Authentik/Poznote.
+5. **Wajib**: pastikan HTTP publik dialihkan ke HTTPS di edge. Caddyfile.tunnel melayani origin HTTP dan tidak melakukan redirect sendiri; tanpa rule ini, kredensial bisa dikirim lewat HTTP polos. Kecuali Anda sudah punya kebijakan HTTPS cakup-host yang setara di zone, buat **Single Redirect** rule untuk tiap hostname: *Request URL* wildcard `http://<host>/*`, *Target URL* `https://<host>/${1}`, status `301`, *Preserve query string* aktif. Cakupan rule hanya host-host ini; jangan mengubah kebijakan HTTPS layanan lain di zone. Tunggu *edge certificate* tiap hostname aktif sebelum langkah 6. Tidak ada layer login Cloudflare Access tambahan, autentikasi demo tetap di Authentik/Poznote.
 
 6. Aktifkan konektor setelah kedua akun admin diganti **dan redirect/certificate edge di langkah 5 sudah aktif**:
     ```
@@ -237,19 +237,19 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
 
 #### Menyalakan/Mematikan VM
 
-Semua layanan (termasuk `cloudflared`) memakai `restart: unless-stopped` — Docker memulainya otomatis saat VM menyala, selama Docker daemon ikut aktif (default di Debian/Ubuntu setelah instalasi via repositori resmi).
+Semua layanan (termasuk `cloudflared`) memakai `restart: unless-stopped`. Docker memulainya otomatis saat VM menyala, selama Docker daemon ikut aktif (default di Debian/Ubuntu setelah instalasi via repositori resmi).
 
 **Menyalakan kembali VM yang dimatikan:**
-1. Nyalakan VM, tunggu boot selesai. Kontainer yang **pernah dibuat/jalan** otomatis menyala (`restart: unless-stopped` tidak bisa membuat layanan yang belum pernah di-`up` atau sudah di-`down` — itu butuh `up -d` manual).
+1. Nyalakan VM, tunggu boot selesai. Kontainer yang **pernah dibuat/jalan** otomatis menyala (`restart: unless-stopped` tidak bisa membuat layanan yang belum pernah di-`up` atau sudah di-`down`, itu butuh `up -d` manual).
 2. (Opsional) Verifikasi aplikasi hidup:
    ```
    $ cd /opt/authentik
    $ sudo docker compose ps        # semua baris "Up"
    $ curl -fsS http://127.0.0.1:9000/-/health/live/ && echo OK
    ```
-3. **Opsi B saja:** cek dashboard Cloudflare — status tunnel kembali **Healthy** dalam 1-2 menit setelah konektor terhubung. Selama VM mati, hostname publik memang tidak bisa diakses (530/timeout di Cloudflare) — wajar, tidak ada data yang rusak. **Opsi A:** cek `https://<AUTH_PUBLIC_HOST>/` terbuka; sertifikat ACME sudah tersimpan di volume `caddy_data` dan tidak diterbitkan ulang.
+3. **Opsi B saja:** cek dashboard Cloudflare, status tunnel kembali **Healthy** dalam 1-2 menit setelah konektor terhubung. Selama VM mati, hostname publik memang tidak bisa diakses (530/timeout di Cloudflare), wajar, tidak ada data yang rusak. **Opsi A:** cek `https://<AUTH_PUBLIC_HOST>/` terbuka; sertifikat ACME sudah tersimpan di volume `caddy_data` dan tidak diterbitkan ulang.
 
-   > **Opsi B, konektor yang pernah di-`stop` manual:** `up -d` biasa **tidak** menghidupkan `cloudflared` — layanan ber-*profile* hanya aktif lewat profile-nya. Urutan pemulihan lengkap:
+   > **Opsi B, konektor yang pernah di-`stop` manual:** `up -d` biasa **tidak** menghidupkan `cloudflared`, layanan ber-*profile* hanya aktif lewat profile-nya. Urutan pemulihan lengkap:
    > ```
    > $ cd /opt/authentik && sudo docker compose up -d          # aplikasi
    > $ curl -fsS http://127.0.0.1:9000/-/health/live/ && echo OK
@@ -260,11 +260,11 @@ Semua layanan (termasuk `cloudflared`) memakai `restart: unless-stopped` — Doc
 ```
 $ sudo shutdown -h now
 ```
-Jangan pakai "power off" langsung di VirtualBox/panel VPS — *sudden power loss* berisiko korupsi pada database PostgreSQL/SQLite yang sedang menulis. `shutdown` menghentikan kontainer dengan rapi lebih dulu.
+Jangan pakai "power off" langsung di VirtualBox/panel VPS, *sudden power loss* berisiko korupsi pada database PostgreSQL/SQLite yang sedang menulis. `shutdown` menghentikan kontainer dengan rapi lebih dulu.
 
-**Pengecualian `unless-stopped`:** jika Anda pernah menjalankan `sudo docker compose stop <layanan>` secara manual, layanan itu TIDAK akan menyala otomatis saat VM restart — status "stopped"-nya menempel. Jalankan `sudo docker compose up -d <layanan>` sekali (konektor: `--profile tunnel up -d cloudflared`) untuk menghidupkannya dan mengembalikan auto-start.
+**Pengecualian `unless-stopped`:** jika Anda pernah menjalankan `sudo docker compose stop <layanan>` secara manual, layanan itu TIDAK akan menyala otomatis saat VM restart, status "stopped"-nya menempel. Jalankan `sudo docker compose up -d <layanan>` sekali (konektor: `--profile tunnel up -d cloudflared`) untuk menghidupkannya dan mengembalikan auto-start.
 
-**Opsi A vs B, ketersediaan:** publik hanya bisa mengakses saat VM/VPS menyala — kedua opsi sama-sama down saat mesin mati. Bedanya Opsi A (VPS) biasanya memang dirancang menyala terus; Opsi B (komputer lokal) mengikuti jadwal Anda. Bila demo perlu tersedia sepanjang presentasi, nyalakan mesin sebelumnya dan verifikasi langkah di atas; untuk ketersediaan 24/7 pindah ke Opsi A.
+**Opsi A vs B, ketersediaan:** publik hanya bisa mengakses saat VM/VPS menyala, kedua opsi sama-sama down saat mesin mati. Bedanya Opsi A (VPS) biasanya memang dirancang menyala terus; Opsi B (komputer lokal) mengikuti jadwal Anda. Bila demo perlu tersedia sepanjang presentasi, nyalakan mesin sebelumnya dan verifikasi langkah di atas; untuk ketersediaan 24/7 pindah ke Opsi A.
 
 # Konfigurasi
 [`^ kembali ke atas ^`](#)
@@ -283,7 +283,7 @@ Jangan pakai "power off" langsung di VirtualBox/panel VPS — *sudden power loss
 - **Outpost**: komponen tambahan untuk *proxy/LDAP* <!-- TODO -->
 
 #### Konfigurasi Caddy
-Ada dua file Caddy, satu per opsi hosting — keduanya membaca nama host dari environment variable Caddy (`AUTH_PUBLIC_HOST`, `TOOLS_PUBLIC_HOST`, `POZNOTE_PUBLIC_HOST` di `.env`):
+Ada dua file Caddy, satu per opsi hosting, keduanya membaca nama host dari environment variable Caddy (`AUTH_PUBLIC_HOST`, `TOOLS_PUBLIC_HOST`, `POZNOTE_PUBLIC_HOST` di `.env`):
 
 | File | Opsi | Perbedaan |
 |---|---|---|
@@ -298,7 +298,7 @@ Rutenya sama di kedua file:
 | `<TOOLS_PUBLIC_HOST>` | `it-tools:80` | IT-Tools, dilindungi *forward auth* |
 | `<POZNOTE_PUBLIC_HOST>` | `poznote:80` | Poznote, login lewat OIDC |
 
-Pada blok IT-Tools, handler dibungkus `route` dengan urutan: (1) path `/outpost.goauthentik.io/*` diteruskan ke outpost, (2) `forward_auth` bertanya ke Authentik apakah pengguna sudah login sebelum permintaan diteruskan ke IT-Tools, sambil menyalin header identitas (`X-Authentik-Username`, dll.) ke aplikasi, (3) `reverse_proxy` ke IT-Tools — sesuai template Caddy resmi Authentik.
+Pada blok IT-Tools, handler dibungkus `route` dengan urutan: (1) path `/outpost.goauthentik.io/*` diteruskan ke outpost, (2) `forward_auth` bertanya ke Authentik apakah pengguna sudah login sebelum permintaan diteruskan ke IT-Tools, sambil menyalin header identitas (`X-Authentik-Username`, dll.) ke aplikasi, (3) `reverse_proxy` ke IT-Tools. Sesuai template Caddy resmi Authentik.
 
 
 
@@ -319,14 +319,14 @@ $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.co
 Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan seluruh backend privat** (`server`, `worker`, `poznote`, `it-tools`) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
 
 #### Cara 2: Compose deklaratif
-Seluruh *stack* juga tergambar sebagai file deklaratif: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile — cukup `docker compose up -d` untuk mereproduksi instalasi di server baru.
+Seluruh *stack* juga tergambar sebagai file deklaratif: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile. Cukup `docker compose up -d` untuk mereproduksi instalasi di server baru.
 
 #### Blueprint (opsi ketiga, opt-in: konfigurasi sebagai kode)
-Instalasi manual di Opsi A/B **tidak memakai blueprint** — provider dikonfigurasi lewat UI Authentik di bagian Cara Pemakaian, dan itu jalur yang sepenuhnya valid. Blueprint adalah alternatif otomatis: [`blueprint.yaml`](blueprint.yaml) membuat grup `demo-users`, provider Proxy IT-Tools, provider OAuth2 Poznote (confidential, *redirect URI* `oidc_callback.php`, scope eksplisit, *signing key* RSA), kedua *application*-nya, dan `authentik_host` embedded outpost ke URL publik — mencegah bug "outpost menunjuk localhost" sejak awal.
+Instalasi manual di Opsi A/B **tidak memakai blueprint**. Provider dikonfigurasi lewat UI Authentik di bagian Cara Pemakaian, dan itu jalur yang sepenuhnya valid. Blueprint adalah alternatif otomatis: [`blueprint.yaml`](blueprint.yaml) membuat grup `demo-users`, provider Proxy IT-Tools, provider OAuth2 Poznote (confidential, *redirect URI* `oidc_callback.php`, scope eksplisit, *signing key* RSA), kedua *application*-nya, dan `authentik_host` embedded outpost ke URL publik, mencegah bug "outpost menunjuk localhost" sejak awal.
 
-**Mengapa opt-in:** blueprint memakai `state: present` — setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: salin kedua file itu ke `/opt/authentik`, lalu tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE` dan `docker compose up -d server worker`.)
+**Mengapa opt-in:** blueprint memakai `state: present`. Setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: salin kedua file itu ke `/opt/authentik`, lalu tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE` dan `docker compose up -d server worker`.)
 
-Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker` — subdirektori *custom*, *packaged defaults* Authentik tidak tertimpa. Sesuai dokumentasi resmi, *worker* melakukan *auto-discovery*: file baru otomatis dibuat *instance*-nya dan diterapkan; perubahan file memicu *apply* ulang. Urutan dependensi (flow *implicit-consent* + *scope mappings* sistem) dijamin lewat entri `metaapplyblueprint` karena *discovery order* tidak dijamin. *Signing key* dipilih lewat lookup `!Find` ke key pair internal bawaan Authentik (`goauthentik.io/crypto/jwt-managed`, RSA) — blueprint tidak bisa membuat key pair RSA sendiri, dan Poznote hanya menerima JWKS `kty=RSA`. Provider OAuth2 Poznote sengaja **tidak** di-*attach* ke outpost (outpost proxy menolak non-ProxyProvider); Poznote memakai OIDC langsung.
+Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori *custom*, *packaged defaults* Authentik tidak tertimpa. Sesuai dokumentasi resmi, *worker* melakukan *auto-discovery*: file baru otomatis dibuat *instance*-nya dan diterapkan; perubahan file memicu *apply* ulang. Urutan dependensi (flow *implicit-consent* + *scope mappings* sistem) dijamin lewat entri `metaapplyblueprint` karena *discovery order* tidak dijamin. *Signing key* dipilih lewat lookup `!Find` ke key pair internal bawaan Authentik (`goauthentik.io/crypto/jwt-managed`, RSA), blueprint tidak bisa membuat key pair RSA sendiri, dan Poznote hanya menerima JWKS `kty=RSA`. Provider OAuth2 Poznote sengaja **tidak** di-*attach* ke outpost (outpost proxy menolak non-ProxyProvider), sehingga tidak muncul di daftar aplikasi outpost. Blueprint dibuat dari pengalaman deployment nyata, bukan contoh kosong.
 
 #### LXC (Proxmox helper script)
 <!-- TODO: opsional, bandingkan dengan instalasi Docker (lebih ringan dan mudah di-snapshot, tetapi kurang portabel) -->
@@ -348,13 +348,13 @@ Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker` — subdirekt
 
     <!-- TODO: screenshot; sebutkan bahwa IT-Tools sendiri tidak punya fitur login -->
 
-    > **Perbaiki Embedded Outpost setelah bootstrap**: karena akun admin pertama dibuat lewat `http://localhost:9000` (SSH loopback), Authentik dapat menganggap URL utamanya localhost. Buka **Applications → Outposts → authentik Embedded Outpost → Edit** dan set `authentik_host` ke URL browser penuh: `https://<AUTH_PUBLIC_HOST>/`. Biarkan `authentik_host_browser` kosong (URL browser sama, bukan issuer kedua). Jangan pernah menghubungkan hostname publik langsung ke `it-tools:80`. (Bila Anda memakai [blueprint](#blueprint-opsi-ketiga-opt-in-konfigurasi-sebagai-kode), langkah ini sudah otomatis — cukup verifikasi.)
+    > **Perbaiki Embedded Outpost setelah bootstrap**: karena akun admin pertama dibuat lewat `http://localhost:9000` (SSH loopback), Authentik dapat menganggap URL utamanya localhost. Buka **Applications → Outposts → authentik Embedded Outpost → Edit** dan set `authentik_host` ke URL browser penuh: `https://<AUTH_PUBLIC_HOST>/`. Biarkan `authentik_host_browser` kosong (URL browser sama, bukan issuer kedua). Jangan pernah menghubungkan hostname publik langsung ke `it-tools:80`. (Bila Anda memakai [blueprint](#blueprint-opsi-ketiga-opt-in-konfigurasi-sebagai-kode), langkah ini sudah otomatis, cukup verifikasi.)
 
 4. **Login Poznote lewat OIDC**
     1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**. Pilih *application slug* `poznote` (dipakai di URL issuer, jadi harus konsisten).
-    2. *Redirect URI* (strict): `https://<POZNOTE_PUBLIC_HOST>/oidc_callback.php`. Scope: `openid`, `profile`, `email`. **Signing Key**: pilih *key pair* yang tercantum di UI (mis. `authentik Self-signed Certificate`, dibuat otomatis saat instalasi; atau *Generate new key pair* di **Customization → Certificates**) — Poznote hanya menerima JWKS `kty=RSA`; tanpa signing key Authentik memakai HS256 dan token ditolak. (Key internal `authentik Internal JWT Certificate` memang tidak muncul di daftar UI — disembunyikan dari listing.)
+    2. *Redirect URI* (strict): `https://<POZNOTE_PUBLIC_HOST>/oidc_callback.php`. Scope: `openid`, `profile`, `email`. **Signing Key**: pilih *key pair* yang tercantum di UI (mis. `authentik Self-signed Certificate`, dibuat otomatis saat instalasi; atau *Generate new key pair* di **Customization → Certificates**). Poznote hanya menerima JWKS `kty=RSA`; tanpa signing key Authentik memakai HS256 dan token ditolak. (Key internal `authentik Internal JWT Certificate` memang tidak muncul di daftar UI, disembunyikan dari listing.)
 
-       > Callback Poznote memakai file `oidc_callback.php` di root — bukan `/oidc/callback`. Jika provider Poznote sudah ada dari setup lama, **edit** provider itu daripada menduplikasinya.
+       > Callback Poznote memakai file `oidc_callback.php` di root, bukan `/oidc/callback`. Jika provider Poznote sudah ada dari setup lama, **edit** provider itu daripada menduplikasinya.
     3. Buka `https://<POZNOTE_PUBLIC_HOST>`; bila kredensial bawaan belum diganti pada langkah instalasi, login sebagai `admin_change_me` / `admin` dan ganti **username dan password** administrator sekarang.
     4. Di Poznote: **Settings > Admin Tools > OIDC / SSO**, aktifkan OIDC dengan isian berikut:
 
@@ -368,20 +368,20 @@ Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker` — subdirekt
 
         Biarkan *Discovery URL* kosong: Poznote menurunkannya dengan menambahkan `/.well-known/openid-configuration` ke *Issuer URL*. Poznote membangun callback/logout dari nama host permintaan, jadi pastikan hostnya sesuai Redirect URI yang terdaftar. Jangan pakai issuer ber-HTTP/internal; jangan ubah login lokal Poznote menjadi SSO-only.
 
-        Pada **Opsi B**, container Poznote harus bisa menjangkau issuer dan JWKS publik tersebut lewat koneksi keluar (Cloudflare) — jangan pakai issuer container-name/HTTP internal, split DNS, atau bypass TLS.
+        Pada **Opsi B**, container Poznote harus bisa menjangkau issuer dan JWKS publik tersebut lewat koneksi keluar (Cloudflare). Jangan pakai issuer container-name/HTTP internal, split DNS, atau bypass TLS.
     5. Masukkan **Client ID** dan **Client Secret** dari provider Authentik ke `/opt/authentik/.env` (interpolasi Compose, bukan secret literal di YAML):
        ```
        POZNOTE_OIDC_CLIENT_ID=<client-id>
        POZNOTE_OIDC_CLIENT_SECRET=<client-secret>
        ```
        Kedua variabel ini sudah di-wire ke environment container Poznote (`docker-compose.override.yml`); nilai yang Anda salin harus **persis sama** dengan yang tampil di halaman provider Authentik.
-    6. Buat ulang hanya kontainer Poznote — `down` seluruh stack tidak diperlukan:
+    6. Buat ulang hanya kontainer Poznote (`down` seluruh stack tidak diperlukan):
        ```
        $ sudo docker compose up -d poznote
        ```
     7. Keluar dari Poznote. Halaman login sekarang menampilkan tombol "Continue with Authentik"; pengguna baru otomatis mendapatkan akun Poznote sendiri.
 
-    > **Pengguna blueprint**: bila stack dijalankan lewat `setup.sh` (atau overlay blueprint aktif), langkah 1–2 dan 5 sudah otomatis — provider, scope, signing key, dan kredensial dibuat blueprint dari `.env`; cukup verifikasi di **Applications**, lalu lanjut ke langkah 3.
+    > **Pengguna blueprint**: bila stack dijalankan lewat `setup.sh` (atau overlay blueprint aktif), langkah 1–2 dan 5 sudah otomatis. Provider, scope, signing key, dan kredensial dibuat blueprint dari `.env`; cukup verifikasi di **Applications**, lalu lanjut ke langkah 3.
 
 5. **Pendaftaran MFA**: TOTP dan/atau passkey <!-- TODO -->
 
@@ -406,18 +406,18 @@ Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment Opsi B:
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
-| Login IT-Tools dialihkan ke `localhost` → `ERR_CONNECTION_REFUSED` | Embedded Outpost mengira host Authentik = `http://localhost:9000` karena bootstrap lewat SSH loopback | **Applications → Outposts → authentik Embedded Outpost → Edit** → set `authentik_host` ke `https://<AUTH_PUBLIC_HOST>/` (URL penuh, trailing slash). Jangan set `authentik_host_browser`. Lihat blok "Perbaiki Embedded Outpost" di atas — ini WAJIB dicek setelah bootstrap lokal, jangan dianggap opsional |
+| Login IT-Tools dialihkan ke `localhost` → `ERR_CONNECTION_REFUSED` | Embedded Outpost mengira host Authentik = `http://localhost:9000` karena bootstrap lewat SSH loopback | **Applications → Outposts → authentik Embedded Outpost → Edit**: set `authentik_host` ke `https://<AUTH_PUBLIC_HOST>/` (URL penuh, trailing slash). Jangan set `authentik_host_browser`. Lihat blok "Perbaiki Embedded Outpost" di atas, ini WAJIB dicek setelah bootstrap lokal, jangan dianggap opsional |
 | Setelah login, IT-Tools menampilkan halaman "Not Found / Powered by authentik" | *Kemungkinan* (belum terverifikasi dari log): cookie sesi proxy dari percobaan saat outpost masih salah, atau *External host* provider tidak sama persis dengan hostname publik (mis. `tools.` vs `ittools.`) | Kumpulkan bukti dulu: URL lengkap di address bar browser + `sudo docker compose logs caddy server --tail=50`, dan pastikan route Cloudflare untuk host ini menunjuk `caddy:80` (bukan `server:9000`). Kandidat solusi: jendela *incognito* (cookie lama), samakan *External host* provider dengan `https://<TOOLS_PUBLIC_HOST>` persis, pastikan ketiganya identik: hostname route Cloudflare, `TOOLS_PUBLIC_HOST` di `.env`, *External host* |
 | IT-Tools `502 Bad Gateway` | Kontainer `it-tools` tidak berjalan (versi `setup.sh` lama tidak memulainya; `--profile tunnel up -d cloudflared` hanya menarik dependensinya, caddy) | `sudo docker compose up -d it-tools` (atau `up -d` penuh). `setup.sh` versi baru sudah ikut menjalankannya saat bootstrap |
-| Pengaturan Poznote (OIDC, kata sandi) hilang setiap *recreate* kontainer | (Terkini: sudah diperbaiki di repo) *mount* volume salah target — Poznote menyimpan data di `/var/www/html/data`, bukan `/app/data`; DB di-*recreate* kosong setiap kontainer dibuat ulang | Pastikan memakai `docker-compose.override.yml` versi baru (`poznote_data:/var/www/html/data`). Bila data lama tertimpa: hentikan konektor dan poznote, salin `/var/www/html/data` dari kontainer lama **sebelum** *recreate*, pulihkan ke volume, baru jalankan ulang |
-| Tombol login OIDC Poznote tidak muncul | `oidc_is_enabled()` Poznote hanya cek: toggle Enabled, Issuer terisi, dan `POZNOTE_OIDC_CLIENT_ID` terisi di environment — bukan koneksi jaringan | Tambahkan Client ID/Secret ke `.env` lalu `sudo docker compose up -d poznote`; pastikan toggle Enabled tersimpan |
+| Pengaturan Poznote (OIDC, kata sandi) hilang setiap *recreate* kontainer | *Mount* volume salah target: Poznote menyimpan data di `/var/www/html/data`, bukan `/app/data`; DB di-*recreate* kosong setiap kontainer dibuat ulang | Pastikan memakai `docker-compose.override.yml` versi baru (`poznote_data:/var/www/html/data`). Bila data lama tertimpa: hentikan konektor dan poznote, salin `/var/www/html/data` dari kontainer lama **sebelum** *recreate*, pulihkan ke volume, baru jalankan ulang |
+| Tombol login OIDC Poznote tidak muncul | `oidc_is_enabled()` Poznote hanya cek: toggle Enabled, Issuer terisi, dan `POZNOTE_OIDC_CLIENT_ID` terisi di environment, bukan koneksi jaringan | Tambahkan Client ID/Secret ke `.env` lalu `sudo docker compose up -d poznote`; pastikan toggle Enabled tersimpan |
 | Lupa kata sandi admin Poznote | Hash password per-profil disimpan di `master.db` | Ikuti [Lost administrator password di TROUBLESHOOTING.md upstream](https://github.com/timothepoznanski/poznote/blob/main/docs/TROUBLESHOOTING.md): set `users.password_hash = NULL` dan `password_login_disabled = 0` untuk admin tsb (henti ingress dulu), login dengan kata sandi default, **langsung ganti** |
 | HTTP publik tidak dialihkan / query string hilang setelah redirect | Rule Single Redirect belum dibuat, atau *Preserve query string* belum diaktifkan (default: nonaktif!) | Buat rule per host `http://<host>/*` → `https://<host>/${1}`, 301, dan **aktifkan** *Preserve query string* secara eksplisit sebelum Deploy |
 | `setup.sh` → `Permission denied` | File tidak *executable* (bit eksekusi hilang saat diunduh tanpa git) | `chmod +x setup.sh`. Versi repo sekarang sudah menyimpan bit executable di git |
-| Tidak bisa SSH ke VM VirtualBox (NAT default) | VirtualBox mode NAT tidak meneruskan port ke host; VM tidak punya IP yang bisa dijangkau host secara langsung | VirtualBox → VM → Settings → Network → Port Forwarding: isi **Host IP `127.0.0.1`**, Host Port `2222`, Guest Port `22`. Lalu dari host: `ssh -p 2222 user@127.0.0.1` dan bootstrap `ssh -p 2222 -N -L 9000:127.0.0.1:9000 -L 8040:127.0.0.1:8040 user@127.0.0.1`. Jangan biarkan Host IP kosong — itu mengekspos SSH ke semua antarmuka host |
+| Tidak bisa SSH ke VM VirtualBox (NAT default) | VirtualBox mode NAT tidak meneruskan port ke host; VM tidak punya IP yang bisa dijangkau host secara langsung | VirtualBox → VM → Settings → Network → Port Forwarding: isi **Host IP `127.0.0.1`**, Host Port `2222`, Guest Port `22`. Lalu dari host: `ssh -p 2222 user@127.0.0.1` dan bootstrap `ssh -p 2222 -N -L 9000:127.0.0.1:9000 -L 8040:127.0.0.1:8040 user@127.0.0.1`. Jangan biarkan Host IP kosong, itu mengekspos SSH ke semua antarmuka host |
 | IT-Tools tidak bisa diakses lewat `localhost` seperti Authentik/Poznote | Sesuai desain: IT-Tools tidak punya port host sama sekali (tidak ada yang perlu di-*bootstrap*), hanya bisa lewat Caddy di balik gerbang forward-auth | Akses selalu lewat `https://<TOOLS_PUBLIC_HOST>`; buat provider Proxy dulu bila belum |
 
-Aturan umum yang berulang: **hostname harus identik di tiga tempat** — route Cloudflare, `*_PUBLIC_HOST` di `.env`, dan pengaturan provider Authentik. Beda satu huruf = aliran login putus di tengah.
+Aturan umum yang berulang: **hostname harus identik di tiga tempat**, route Cloudflare, `*_PUBLIC_HOST` di `.env`, dan pengaturan provider Authentik. Beda satu huruf = aliran login putus di tengah.
 
 
 
@@ -480,15 +480,15 @@ Keycloak tetap menjadi alternatif self-hosted matang berbasis Java untuk kebutuh
 4. [IT-Tools](https://github.com/CorentinTh/it-tools)
 5. [Poznote Documentation](https://github.com/timothepoznanski/poznote)
 6. [Auth0 Documentation](https://auth0.com/docs)
-7. [Cloudflare Tunnel — Get started](https://developers.cloudflare.com/tunnel/get-started/)
-8. [Cloudflare Tunnel — Run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
-9. [Cloudflare Tunnel — Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
-10. [Cloudflare — Redirect requests to a different hostname](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-all-different-hostname/)
-11. [Authentik — Reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
-12. [Authentik — Embedded Outpost](https://docs.goauthentik.io/add-secure-apps/outposts/embedded/)
-13. [Authentik — Caddy forward auth](https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_caddy/)
-14. [Docker — Merge Compose files](https://docs.docker.com/reference/compose-file/merge/)
-15. [Docker — Predefined environment variables](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
+7. [Cloudflare Tunnel: Get started](https://developers.cloudflare.com/tunnel/get-started/)
+8. [Cloudflare Tunnel: Run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
+9. [Cloudflare Tunnel: Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
+10. [Cloudflare: Redirect requests to a different hostname](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-all-different-hostname/)
+11. [Authentik: Reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
+12. [Authentik: Embedded Outpost](https://docs.goauthentik.io/add-secure-apps/outposts/embedded/)
+13. [Authentik: Caddy forward auth](https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_caddy/)
+14. [Docker: Merge Compose files](https://docs.docker.com/reference/compose-file/merge/)
+15. [Docker: Predefined environment variables](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
 
 

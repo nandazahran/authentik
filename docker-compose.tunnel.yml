@@ -1,4 +1,4 @@
-# docker-compose.tunnel.yml — overlay mode publik (Cloudflare Tunnel)
+# docker-compose.tunnel.yml: overlay mode publik (Cloudflare Tunnel)
 #
 # Dilayerkan TERAKHIR setelah docker-compose.yml resmi Authentik dan
 # docker-compose.override.yml:

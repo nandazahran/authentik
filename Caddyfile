@@ -1,9 +1,9 @@
-# Caddyfile — ingress publik mode VPS (IP publik langsung)
+# Caddyfile: ingress publik mode VPS (IP publik langsung)
 #
 # Dipakai bersama docker-compose.override.yml + docker-compose.vps.yml pada
 # VPS dengan IP publik. Nama host dikirim lewat environment variables
 # container Caddy (isi di /opt/authentik/.env):
-#   AUTH_PUBLIC_HOST, TOOLS_PUBLIC_HOST, POZNOTE_PUBLIC_HOST — FQDN penuh
+#   AUTH_PUBLIC_HOST, TOOLS_PUBLIC_HOST, POZNOTE_PUBLIC_HOST: FQDN penuh
 #   tanpa skema/path/port, dengan DNS A/AAAA record publik yang mengarah ke
 #   IP VPS.
 #
@@ -17,12 +17,12 @@
 # - Urutan handler IT-Tools dijamin dengan route (template Caddy resmi
 #   Authentik): 1. path outpost, 2. forward auth, 3. aplikasi.
 
-# ---- Authentik
+# Authentik
 {$AUTH_PUBLIC_HOST} {
 	reverse_proxy server:9000
 }
 
-# ---- IT-Tools, dilindungi forward auth
+# IT-Tools, dilindungi forward auth
 {$TOOLS_PUBLIC_HOST} {
 	route {
 		reverse_proxy /outpost.goauthentik.io/* server:9000
@@ -38,7 +38,7 @@
 	}
 }
 
-# ---- Poznote, login lewat OIDC
+# Poznote, login lewat OIDC
 {$POZNOTE_PUBLIC_HOST} {
 	reverse_proxy poznote:80
 }
