@@ -1,0 +1,34 @@
+# docker-compose.vps.yml — overlay mode VPS (IP publik langsung)
+#
+# Dilayerkan TERAKHIR setelah docker-compose.yml resmi Authentik dan
+# docker-compose.override.yml:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.vps.yml
+# di /opt/authentik/.env. Butuh Docker Compose plugin >= 2.24.4 (!override).
+#
+# Efek merge terhadap model Compose:
+# - server.ports !override  -> hanya 127.0.0.1:9000:9000 (binding 9000 dan
+#   9443 all-interface dari file resmi diganti habis). Bootstrap admin
+#   dilakukan lewat SSH port-forward; satu-satunya ingress publik adalah
+#   Caddy 80/443.
+# - poznote.ports !override -> hanya 127.0.0.1:8040:80 untuk bootstrap akun
+#   admin bawaan Poznote (admin_change_me/admin) sebelum dipublikasikan.
+# - Caddy tetap mempublikasikan 80/443 dari docker-compose.override.yml dan
+#   tetap memuat ./Caddyfile (host publik + ACME), tidak ditimpa di sini.
+#
+# Variabel AUTH_PUBLIC_HOST / TOOLS_PUBLIC_HOST / POZNOTE_PUBLIC_HOST wajib
+# diisi di .env; tanpa itu interpolasi Compose gagal (tidak ada default).
+
+services:
+  server:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+
+  caddy:
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:?AUTH_PUBLIC_HOST required}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:?TOOLS_PUBLIC_HOST required}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:?POZNOTE_PUBLIC_HOST required}
+
+  poznote:
+    ports: !override
+      - "127.0.0.1:8040:80"

@@ -1,40 +1,44 @@
-# Caddyfile for the Authentik demo
+# Caddyfile — ingress publik mode VPS (IP publik langsung)
 #
-# - "tls internal" makes Caddy issue certificates from its own local CA.
-#   Browsers will warn until the root certificate is trusted
-#   (it lives in the caddy_data volume: /data/caddy/pki/authorities/local/root.crt).
-# - Hostnames must resolve to the VM's IP on the machine running the browser
-#   (add them to the hosts file or to a local DNS rewrite).
-# - Edit the hostnames below if you want different names.
+# Dipakai bersama docker-compose.override.yml + docker-compose.vps.yml pada
+# VPS dengan IP publik. Nama host dikirim lewat environment variables
+# container Caddy (isi di /opt/authentik/.env):
+#   AUTH_PUBLIC_HOST, TOOLS_PUBLIC_HOST, POZNOTE_PUBLIC_HOST — FQDN penuh
+#   tanpa skema/path/port, dengan DNS A/AAAA record publik yang mengarah ke
+#   IP VPS.
 #
-# TODO: verify the forward_auth block against the current Authentik docs
-#       (Caddy integration page); header names can change between versions.
+# - Tanpa skema pada alamat situs, Caddy otomatis mendapatkan sertifikat TLS
+#   publik (ACME) dan mengalihkan HTTP -> HTTPS. Port 80/443 dipublikasikan
+#   oleh docker-compose.override.yml; pastikan firewall VPS mengizinkan
+#   inbound 80 dan 443 serta outbound HTTPS untuk ACME.
+# - Tidak ada proxy lain di depan Caddy, jadi tidak ada trusted_proxies;
+#   Authentik mempercayai alamat container Caddy (Docker default network,
+#   sudah masuk daftar trusted proxy default Authentik).
+# - Urutan handler IT-Tools dijamin dengan route (template Caddy resmi
+#   Authentik): 1. path outpost, 2. forward auth, 3. aplikasi.
 
-# ---- Authentik itself
-auth-demo.lab.local {
-	tls internal
+# ---- Authentik
+{$AUTH_PUBLIC_HOST} {
 	reverse_proxy server:9000
 }
 
-# ---- Demo app 1: IT-Tools, protected with forward auth
-tools-demo.lab.local {
-	tls internal
+# ---- IT-Tools, dilindungi forward auth
+{$TOOLS_PUBLIC_HOST} {
+	route {
+		reverse_proxy /outpost.goauthentik.io/* server:9000
 
-	# Endpoints of the embedded outpost, served by the Authentik server
-	reverse_proxy /outpost.goauthentik.io/* server:9000
+		forward_auth server:9000 {
+			uri /outpost.goauthentik.io/auth/caddy
+			# Huruf besar/kecil nama header penting, jika tidak isinya kosong
+			copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Entitlements X-Authentik-Email X-Authentik-Name X-Authentik-Uid X-Authentik-Jwt X-Authentik-Meta-Jwks X-Authentik-Meta-Outpost X-Authentik-Meta-Provider X-Authentik-Meta-App X-Authentik-Meta-Version
+			trusted_proxies private_ranges
+		}
 
-	# Ask Authentik "is this user logged in?" before serving the app
-	forward_auth server:9000 {
-		uri /outpost.goauthentik.io/auth/caddy
-		copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Entitlements X-Authentik-Email X-Authentik-Name X-Authentik-Uid X-Authentik-Jwt X-Authentik-Meta-Jwks X-Authentik-Meta-Outpost X-Authentik-Meta-Provider X-Authentik-Meta-App X-Authentik-Meta-Version
-		trusted_proxies private_ranges
+		reverse_proxy it-tools:80
 	}
-
-	reverse_proxy it-tools:80
 }
 
-# ---- Demo app 2: Poznote, logs in through OIDC
-poznote-demo.lab.local {
-	tls internal
+# ---- Poznote, login lewat OIDC
+{$POZNOTE_PUBLIC_HOST} {
 	reverse_proxy poznote:80
 }
