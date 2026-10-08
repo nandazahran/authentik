@@ -222,9 +222,9 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
     ```
     Buat tiga *public hostname* di tunnel tersebut, masing-masing satu nama host pilihan Anda, *Service type* **HTTP** dengan URL `caddy:80`, tanpa path. Biarkan *HTTP Host Header override* kosong agar Host publik asli sampai ke Caddy; **jangan** aktifkan *No TLS Verify* (origin memang HTTP). Biarkan dashboard membuat CNAME untuk tiap hostname.
 
-5. Pastikan HTTP publik dialihkan ke HTTPS di edge. Untuk tiap hostname, buat **Single Redirect** rule: *Request URL* wildcard `http://<host>/*`, *Target URL* `https://<host>/${1}`, status `301`, *Preserve query string* aktif. Cakupan rule hanya host-host ini; jangan mengubah kebijakan HTTPS layanan lain di zone. Tunggu *edge certificate* tiap hostname aktif. Tidak ada layer login Cloudflare Access tambahan — autentikasi demo tetap di Authentik/Poznote.
+5. **Wajib** — pastikan HTTP publik dialihkan ke HTTPS di edge. Caddyfile.tunnel melayani origin HTTP dan tidak melakukan redirect sendiri; tanpa rule ini, kredensial bisa dikirim lewat HTTP polos. Kecuali Anda sudah punya kebijakan HTTPS cakup-host yang setara di zone, buat **Single Redirect** rule untuk tiap hostname: *Request URL* wildcard `http://<host>/*`, *Target URL* `https://<host>/${1}`, status `301`, *Preserve query string* aktif. Cakupan rule hanya host-host ini; jangan mengubah kebijakan HTTPS layanan lain di zone. Tunggu *edge certificate* tiap hostname aktif sebelum langkah 6. Tidak ada layer login Cloudflare Access tambahan — autentikasi demo tetap di Authentik/Poznote.
 
-6. Aktifkan konektor setelah kedua akun admin diganti:
+6. Aktifkan konektor setelah kedua akun admin diganti **dan redirect/certificate edge di langkah 5 sudah aktif**:
     ```
     $ sudo docker compose --profile tunnel pull cloudflared
     $ sudo docker compose --profile tunnel up -d cloudflared
