@@ -274,7 +274,21 @@ Pada blok IT-Tools, handler dibungkus `route` dengan urutan: (1) path `/outpost.
 # Otomatisasi
 [`^ kembali ke atas ^`](#)
 
-Dengan otomatisasi, seluruh instalasi dan konfigurasi dapat direproduksi. Seluruh *stack* sudah selesai digambarkan sebagai file declarative: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile — cukup `docker compose up -d` untuk mereproduksi instalasi di server baru. *Hardening* OS (ufw, unattended-upgrades, fail2ban) tetap ditangani manual di server masing-masing.
+Dengan otomatisasi, seluruh instalasi dan konfigurasi dapat direproduksi.
+
+#### Cara 1: Shell script
+Jalankan [setup.sh](setup.sh) pada server Debian/Ubuntu baru (dengan `docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel` di folder yang sama). Script ini menggantikan seluruh Langkah Bersama + langkah `.env`/salin file pada Opsi A/B di atas:
+```
+$ sudo ./setup.sh --vps auth.example.com tools.example.com poznote.example.com --harden
+$ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.com --harden
+```
+- `--vps` / `--tunnel`: pilih mode hosting sesuai bagian Instalasi; tiga argumen host adalah FQDN publik Anda.
+- `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`.
+
+Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan hanya backend privat** (`server`, `worker`, `poznote` — tanpa ingress publik) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
+
+#### Cara 2: Compose deklaratif
+Seluruh *stack* juga tergambar sebagai file deklaratif: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile — cukup `docker compose up -d` untuk mereproduksi instalasi di server baru.
 
 #### Blueprint (konfigurasi sebagai kode)
 Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otomatis, sehingga seluruh lingkungan demo dapat dibuat ulang dengan satu perintah.

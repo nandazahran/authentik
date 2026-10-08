@@ -242,6 +242,14 @@ for f in docker-compose.override.yml "${OVERLAY}" "${CADDY_FILE}"; do
   fi
 done
 
+# A stale/foreign COMPOSE_FILE must not silently win: if it does not select
+# this mode's overlay, the base file publishes 9000/9443 on all interfaces.
+current_compose_file=$(grep -E '^COMPOSE_FILE=' .env | tail -1 | cut -d= -f2- || true)
+if [ -n "$current_compose_file" ] \
+  && ! printf '%s' "$current_compose_file" | tr ':' '\n' | grep -qx "${OVERLAY}"; then
+  die "COMPOSE_FILE in .env is '${current_compose_file}' and does not include ${OVERLAY}. Edit /opt/authentik/.env and set COMPOSE_FILE to select the intended overlay (docker-compose.yml:docker-compose.override.yml:${OVERLAY}), then re-run."
+fi
+
 add_env_key COMPOSE_FILE "docker-compose.yml:docker-compose.override.yml:${OVERLAY}"
 add_env_key AUTH_PUBLIC_HOST "${AUTH_HOST}"
 add_env_key TOOLS_PUBLIC_HOST "${TOOLS_HOST}"
