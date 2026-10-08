@@ -235,6 +235,37 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
 
     Pindah antar opsi: pertahankan secret `.env` dan *named volume* (`down -v` dilarang, jangan regenerasi `AUTHENTIK_SECRET_KEY`), salin overlay + Caddyfile opsi tujuan, set `COMPOSE_FILE` yang sesuai, lalu `sudo docker compose up -d` untuk mengganti binding. Selesaikan penggantian akun admin yang belum diganti lewat SSH loopback sebelum mengaktifkan kembali ingress publik.
 
+#### Menyalakan/Mematikan VM
+
+Semua layanan (termasuk `cloudflared`) memakai `restart: unless-stopped` — Docker memulainya otomatis saat VM menyala, selama Docker daemon ikut aktif (default di Debian/Ubuntu setelah instalasi via repositori resmi).
+
+**Menyalakan kembali VM yang dimatikan:**
+1. Nyalakan VM, tunggu boot selesai. Kontainer yang **pernah dibuat/jalan** otomatis menyala (`restart: unless-stopped` tidak bisa membuat layanan yang belum pernah di-`up` atau sudah di-`down` — itu butuh `up -d` manual).
+2. (Opsional) Verifikasi aplikasi hidup:
+   ```
+   $ cd /opt/authentik
+   $ sudo docker compose ps        # semua baris "Up"
+   $ curl -fsS http://127.0.0.1:9000/-/health/live/ && echo OK
+   ```
+3. **Opsi B saja:** cek dashboard Cloudflare — status tunnel kembali **Healthy** dalam 1-2 menit setelah konektor terhubung. Selama VM mati, hostname publik memang tidak bisa diakses (530/timeout di Cloudflare) — wajar, tidak ada data yang rusak. **Opsi A:** cek `https://<AUTH_PUBLIC_HOST>/` terbuka; sertifikat ACME sudah tersimpan di volume `caddy_data` dan tidak diterbitkan ulang.
+
+   > **Opsi B, konektor yang pernah di-`stop` manual:** `up -d` biasa **tidak** menghidupkan `cloudflared` — layanan ber-*profile* hanya aktif lewat profile-nya. Urutan pemulihan lengkap:
+   > ```
+   > $ cd /opt/authentik && sudo docker compose up -d          # aplikasi
+   > $ curl -fsS http://127.0.0.1:9000/-/health/live/ && echo OK
+   > $ sudo docker compose --profile tunnel up -d cloudflared  # konektor
+   > ```
+
+**Mematikan VM dengan aman:**
+```
+$ sudo shutdown -h now
+```
+Jangan pakai "power off" langsung di VirtualBox/panel VPS — *sudden power loss* berisiko korupsi pada database PostgreSQL/SQLite yang sedang menulis. `shutdown` menghentikan kontainer dengan rapi lebih dulu.
+
+**Pengecualian `unless-stopped`:** jika Anda pernah menjalankan `sudo docker compose stop <layanan>` secara manual, layanan itu TIDAK akan menyala otomatis saat VM restart — status "stopped"-nya menempel. Jalankan `sudo docker compose up -d <layanan>` sekali (konektor: `--profile tunnel up -d cloudflared`) untuk menghidupkannya dan mengembalikan auto-start.
+
+**Opsi A vs B, ketersediaan:** publik hanya bisa mengakses saat VM/VPS menyala — kedua opsi sama-sama down saat mesin mati. Bedanya Opsi A (VPS) biasanya memang dirancang menyala terus; Opsi B (komputer lokal) mengikuti jadwal Anda. Bila demo perlu tersedia sepanjang presentasi, nyalakan mesin sebelumnya dan verifikasi langkah di atas; untuk ketersediaan 24/7 pindah ke Opsi A.
+
 # Konfigurasi
 [`^ kembali ke atas ^`](#)
 
