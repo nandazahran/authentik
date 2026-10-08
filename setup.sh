@@ -233,7 +233,7 @@ else
   CADDY_FILE="Caddyfile.tunnel"
 fi
 
-for f in docker-compose.override.yml "${OVERLAY}" "${CADDY_FILE}"; do
+for f in docker-compose.override.yml "${OVERLAY}" "${CADDY_FILE}" blueprint.yaml; do
   if [ ! -f "$f" ]; then
     cp "${SCRIPT_DIR}/${f}" "$f"
     echo "Copied ${f}"
@@ -254,6 +254,11 @@ add_env_key COMPOSE_FILE "docker-compose.yml:docker-compose.override.yml:${OVERL
 add_env_key AUTH_PUBLIC_HOST "${AUTH_HOST}"
 add_env_key TOOLS_PUBLIC_HOST "${TOOLS_HOST}"
 add_env_key POZNOTE_PUBLIC_HOST "${POZNOTE_HOST}"
+# Kredensial OIDC Poznote dibuat di sini supaya blueprint (yang menerapkannya
+# sebagai client_id/client_secret provider OAuth2) dan container Poznote
+# membaca nilai yang sama dari .env. add_env_key tidak menimpa nilai lama.
+add_env_key POZNOTE_OIDC_CLIENT_ID "$(openssl rand -hex 20 | tr 'A-F' 'a-f')"
+add_env_key POZNOTE_OIDC_CLIENT_SECRET "$(openssl rand -base64 48 | tr -d '\n' | tr '/+' '_-')"
 chmod 600 .env
 
 if [ "$MODE" = tunnel ] && [ ! -f cloudflared.env ]; then
@@ -298,6 +303,13 @@ Next steps:
 4) Caddy (and the tunnel connector) were NOT started by this script.
    IT-Tools is already running but unreachable: it publishes no port and
    only answers through Caddy behind the Authentik gate.
+
+5) The demo blueprint (group demo-users, IT-Tools + Poznote providers,
+   embedded outpost host) is mounted at /blueprints/demo.yaml. The worker
+   auto-applies it within a minute of the admin setup completing — verify
+   under Admin interface > Applications: group demo-users, apps IT-Tools
+   and Poznote. Poznote OIDC settings must still be enabled in its UI:
+   Settings > Admin Tools > OIDC / SSO (issuer https://${AUTH_HOST}/application/o/poznote/).
 
 Only after BOTH admin accounts are secured, start public ingress from
 ${APP_DIR}:

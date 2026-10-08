@@ -21,6 +21,30 @@ services:
     depends_on:
       - server
 
+  # Blueprint demo: di-mount ke /blueprints/custom/ pada server+worker
+  # (subdirektori custom, bukan menimpa /blueprints; packaged defaults tetap).
+  # Worker auto-discovery menerapkannya. Tag !Env di blueprint.yaml membaca
+  # environment server/worker, yang datang dari .env lewat interpolasi Compose.
+  server:
+    volumes:
+      - ./blueprint.yaml:/blueprints/custom/demo.yaml:ro
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:-}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:-}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:-}
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
+
+  worker:
+    volumes:
+      - ./blueprint.yaml:/blueprints/custom/demo.yaml:ro
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:-}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:-}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:-}
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
+
   # Demo app 1: static developer tools, no login of its own -> forward auth
   it-tools:
     image: corentinth/it-tools:latest

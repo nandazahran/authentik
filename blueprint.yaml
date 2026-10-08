@@ -1,0 +1,169 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+#
+# Blueprint demo Authentik — otomatisasi konfigurasi aplikasi.
+# Di-mount ke /blueprints/custom/demo.yaml pada container server+worker
+# (docker-compose.override.yml); worker auto-discovery menerapkannya otomatis
+# saat file muncul/diubah (https://docs.goauthentik.io/customize/blueprints/).
+#
+# Konteks (context) diisi dari environment container server/worker lewat tag !Env:
+#   AUTH_PUBLIC_HOST    — hostname publik Authentik, mis. auth.example.com
+#   TOOLS_PUBLIC_HOST   — hostname publik IT-Tools, mis. tools.example.com
+#   POZNOTE_PUBLIC_HOST — hostname publik Poznote, mis. poznote.example.com
+#   POZNOTE_OIDC_CLIENT_ID     — dari .env (interpolasi Compose)
+#   POZNOTE_OIDC_CLIENT_SECRET — dari .env (interpolasi Compose)
+#
+# Yang dibuat/dijamin:
+#   1. Grup demo-users (target binding kebijakan akses)
+#   2. Embedded outpost: authentik_host publik + kedua provider ter-attach
+#   3. Provider Proxy IT-Tools (forward auth single application) + aplikasi
+#   4. Provider OAuth2 Poznote: confidential, redirect oidc_callback.php,
+#      scope mappings openid/profile/email eksplisit, signing key RSA
+#      (Poznote hanya menerima JWKS kty=RSA; tanpa signing_key Authentik
+#      memakai HS256 yang JWKS-nya tidak memuat kunci RSA).
+#
+# Urutan dependensi dijamin lewat metaapplyblueprint: flow implicit-consent
+# dan scope system blueprints harus sudah diterapkan sebelum !Find di bawah
+# (discovery order tidak dijamin — lihat docs customize/blueprints/).
+#
+# state: present — aman dijalankan ulang; field yang tidak disebut tidak diubah.
+
+version: 1
+metadata:
+  name: demo-applications
+  labels:
+    blueprints.goauthentik.io/description: "Demo: IT-Tools (forward auth) + Poznote (OIDC)"
+
+entries:
+  # ---------------------------------------------- dependency: authorization flow
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Provider authorization flow (implicit consent)
+      required: true
+
+  # -------------------------------------------- dependency: OAuth2 scope mappings
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - OAuth2 Provider - Scopes
+      required: true
+
+  # -------------------------------------------- dependency: proxy scope mapping
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - Proxy Provider - Scopes
+      required: true
+
+  # ---------------------------------------------------------------- grup demo
+  - model: authentik_core.group
+    id: demo-users-group
+    identifiers:
+      name: demo-users
+    attrs:
+      name: demo-users
+      is_superuser: false
+
+  # --------------------------------------------- RSA signing key untuk Poznote
+  # Nama unik demo; !Find tidak dipakai di sini karena key pair harus milik
+  # stack ini. CertificateKeyPair tanpa cert data = Authentik membuat RSA
+  # key pair baru.
+  - model: authentik_crypto.certificatekeypair
+    id: poznote-signing-key
+    identifiers:
+      name: demo-poznote-signing-key
+    attrs:
+      name: demo-poznote-signing-key
+
+  # ------------------------------------------------ IT-Tools: proxy provider
+  - model: authentik_providers_proxy.proxyprovider
+    id: it-tools-provider
+    identifiers:
+      name: IT-Tools
+    attrs:
+      name: IT-Tools
+      mode: forward_single
+      external_host: !Format ["https://%s", !Env TOOLS_PUBLIC_HOST]
+      # Scope mapping proxy bawaan (ak_proxy) — dibutuhkan outpost untuk
+      # header identitas forward auth.
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/proxy/scope-proxy],
+        ]
+      authorization_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+      ]
+
+  - model: authentik_core.application
+    id: it-tools-app
+    identifiers:
+      slug: it-tools
+    attrs:
+      name: IT-Tools
+      slug: it-tools
+      provider: !KeyOf it-tools-provider
+
+  # ------------------------------------------------ Poznote: OAuth2 provider
+  - model: authentik_providers_oauth2.oauth2provider
+    id: poznote-provider
+    identifiers:
+      name: Poznote
+    attrs:
+      name: Poznote
+      client_type: confidential
+      client_id: !Env POZNOTE_OIDC_CLIENT_ID
+      client_secret: !Env POZNOTE_OIDC_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          redirect_uri_type: authorization
+          url: !Format ["https://%s/oidc_callback.php", !Env POZNOTE_PUBLIC_HOST]
+      grant_types:
+        - authorization_code
+        - refresh_token
+      # Scope mappings openid/profile/email eksplisit — tanpa ini provider
+      # baru tidak membawa scope apa pun ke tombol login Poznote.
+      property_mappings:
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-openid],
+        ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-profile],
+        ]
+        - !Find [
+            authentik_providers_oauth2.scopemapping,
+            [managed, goauthentik.io/providers/oauth2/scope-email],
+        ]
+      # RSA: Poznote menolak JWKS tanpa kunci RSA (oidc.php: kty !== 'RSA'
+      # di-skip). Tanpa signing_key, Authentik memakai HS256 + client secret.
+      signing_key: !KeyOf poznote-signing-key
+      authorization_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-provider-authorization-implicit-consent],
+      ]
+
+  - model: authentik_core.application
+    id: poznote-app
+    identifiers:
+      slug: poznote
+    attrs:
+      name: Poznote
+      slug: poznote
+      provider: !KeyOf poznote-provider
+
+  # ------------------------------------ embedded outpost: host + providers list
+  # providers di-set eksplisit supaya kedua provider demo ter-attach;
+  # tanpa ini forward auth IT-Tools tidak pernah melayani hostname publik.
+  # Ditempatkan TERAKHIR: butuh PK kedua provider dari entri di atas.
+  - model: authentik_outposts.outpost
+    identifiers:
+      managed: goauthentik.io/outposts/embedded
+    attrs:
+      config:
+        authentik_host: !Format ["https://%s/", !Env AUTH_PUBLIC_HOST]
+      providers:
+        - !KeyOf it-tools-provider
+        - !KeyOf poznote-provider
