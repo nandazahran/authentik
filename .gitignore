@@ -1,0 +1,11 @@
+# Secret dan data runtime — jangan pernah commit
+.env
+cloudflared.env
+
+# File compose resmi Authentik diunduh ke /opt/authentik, bukan bagian repo
+/docker-compose.yml
+
+# Data runtime Authentik
+/data/
+/certs/
+/custom-templates/

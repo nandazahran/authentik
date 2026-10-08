@@ -32,6 +32,11 @@ services:
     restart: unless-stopped
     volumes:
       - poznote_data:/app/data
+    environment:
+      # Diisi di .env setelah provider OAuth2 dibuat di Authentik.
+      # Kosong diperbolehkan sebelum OIDC dikonfigurasi.
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
 
 volumes:
   caddy_data:

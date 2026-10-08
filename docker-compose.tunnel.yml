@@ -1,0 +1,55 @@
+# docker-compose.tunnel.yml — overlay mode publik (Cloudflare Tunnel)
+#
+# Dilayerkan TERAKHIR setelah docker-compose.yml resmi Authentik dan
+# docker-compose.override.yml:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml
+# di /opt/authentik/.env. Butuh Docker Compose plugin >= 2.24.4 (!override/!reset).
+#
+# Efek merge terhadap model Compose:
+# - server.ports !override  -> hanya 127.0.0.1:9000:9000 (binding 9000 dan
+#   9443 all-interface dari file resmi diganti habis).
+# - caddy.ports !reset []   -> Caddy tidak mempublikasikan port sama sekali;
+#   hanya bisa dihubungi cloudflared lewat jaringan internal Compose.
+# - poznote.ports !override -> hanya 127.0.0.1:8040:80 untuk bootstrap akun
+#   admin bawaan Poznote (admin_change_me/admin) sebelum tunnel aktif.
+#
+# cloudflared berjalan lewat profile "tunnel" sehingga `docker compose up -d`
+# biasa tidak membuat konektor; aktifkan eksplisit dengan
+# `docker compose --profile tunnel up -d cloudflared` setelah akun admin
+# Authentik dan Poznote diganti. Token tunnel hanya dibaca konektor dari
+# ./cloudflared.env (TUNNEL_TOKEN=...), file root mode 600; jangan taruh di .env.
+
+services:
+  server:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+
+  caddy:
+    ports: !reset []
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:?AUTH_PUBLIC_HOST required}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:?TOOLS_PUBLIC_HOST required}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:?POZNOTE_PUBLIC_HOST required}
+
+  poznote:
+    ports: !override
+      - "127.0.0.1:8040:80"
+    environment:
+      # Diisi lewat /opt/authentik/.env setelah provider OAuth2 dibuat di
+      # Authentik. Kosong diperbolehkan karena OIDC dikonfigurasi setelah
+      # bootstrap akun admin lokal. Jangan tulis client secret literal di sini.
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    command: ["tunnel", "--no-autoupdate", "run"]
+    env_file:
+      - ./cloudflared.env
+    depends_on:
+      - caddy

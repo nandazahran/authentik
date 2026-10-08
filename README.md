@@ -144,6 +144,80 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 
 
 
+#### Instalasi Mode Publik (Cloudflare Tunnel)
+
+Mode LAN di atas mempublikasikan port 80/443 ke jaringan lokal. Mode publik membuat demo dapat diakses dari internet **tanpa port forwarding di router**: `cloudflared` di VM melakukan koneksi *outbound* ke Cloudflare, HTTPS dihentikan di edge Cloudflare, dan Caddy dihubungi lewat jaringan internal Compose. Syarat: satu domain yang dikelola akun Cloudflare Anda, dan Docker Compose plugin >= 2.24.4 (diperlukan tag `!override`/`!reset` di `docker-compose.tunnel.yml`).
+
+> **Jangan** jalankan `setup.sh --demo` untuk instalasi tunnel baru — script itu mode LAN dan sempat membuka port web ke semua antarmuka. Mode LAN tetap didukung sebagai mode terpisah.
+
+Nama host contoh di bawah (`auth.example.com`, `tools.example.com`, `poznote.example.com`) hanyalah contoh, bukan nilai harfiah. Gunakan tiga subdomain satu tingkat di bawah domain Cloudflare Anda — mis. `auth.<domain>`, `tools.<domain>`, `poznote.<domain>` — agar tercakup *edge certificate* standar; ketiganya harus FQDN yang berbeda dan belum dipakai record lain. Bila sebuah label sudah dipakai DNS milik layanan lain, jangan ditimpa: pilih label lain (mis. tambah `-demo`) dan gunakan nilai yang sama secara konsisten di `.env`, route Cloudflare, dan pengaturan provider.
+
+1. Gunakan VM Debian/Ubuntu yang sudah disediakan dengan akses SSH. Instal Docker dari repositori resmi (langkah 2 di atas), lalu unduh compose resmi Authentik ke `/opt/authentik`:
+    ```
+    $ sudo mkdir -p /opt/authentik
+    $ sudo curl -fsSL -o /opt/authentik/docker-compose.yml https://docs.goauthentik.io/compose.yml
+    ```
+
+2. Dari **direktori repo** (tempat file konfigurasi ini berada), salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
+    ```
+    $ sudo cp docker-compose.override.yml docker-compose.tunnel.yml Caddyfile Caddyfile.tunnel /opt/authentik/
+    $ cd /opt/authentik
+    $ echo "PG_PASS=$(openssl rand -base64 36 | tr -d '\n')" | sudo tee .env
+    $ echo "AUTHENTIK_SECRET_KEY=$(openssl rand -base64 60 | tr -d '\n')" | sudo tee -a .env
+    $ sudo nano .env
+    ```
+    Di editor, tambahkan baris berikut (ganti nama host contoh dengan nama host pilihan Anda):
+    ```
+    COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml
+    AUTH_PUBLIC_HOST=auth.example.com
+    TOOLS_PUBLIC_HOST=tools.example.com
+    POZNOTE_PUBLIC_HOST=poznote.example.com
+    ```
+    `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
+    ```
+    $ sudo touch cloudflared.env && sudo chmod 600 cloudflared.env
+    $ sudo chmod 600 .env
+    ```
+
+3. Validasi dan jalankan stack (konektor belum dibuat karena profile `tunnel` tidak aktif):
+    ```
+    $ sudo docker compose config --quiet
+    $ sudo docker compose pull
+    $ sudo docker compose up -d
+    ```
+    Jangan pernah mencetak `docker compose config` tanpa `--quiet` di mesin berisi secret asli. Konfirmasi Authentik sehat sebelum lanjut:
+    ```
+    $ curl -fsS http://127.0.0.1:9000/-/health/live/
+    ```
+
+4. Dari komputer yang menjalankan browser, buka SSH *port forward* (halaman ini hanya lewat SSH, tidak dipublikasikan ke LAN):
+    ```
+    $ ssh -N -L 9000:127.0.0.1:9000 -L 8040:127.0.0.1:8040 user@<ip-vm>
+    ```
+    - Buka `http://localhost:9000/if/flow/initial-setup/` dan buat kata sandi admin Authentik yang kuat.
+    - Buka `http://localhost:8040`, login Poznote sebagai `admin_change_me` / `admin`, lalu ganti **username dan password** administratornya di UI Poznote. Pastikan kredensial lama tidak bisa login lagi.
+
+    **Aktivasi tunnel dilarang sebelum kedua akun di atas selesai diganti.** Panduan MFA di bagian Konfigurasi tetap berlaku.
+
+5. Di dashboard Cloudflare (Zero Trust > Networks > Tunnels) buat satu tunnel *remotely managed* bernama `authentik-demo`. Simpan token tunnel sebagai `TUNNEL_TOKEN=<token-asli>` di `/opt/authentik/cloudflared.env` **menggunakan editor** — bukan argumen command-line atau assignment shell yang masuk riwayat shell:
+    ```
+    $ sudo nano /opt/authentik/cloudflared.env
+    ```
+    Buat tiga *public hostname* di tunnel tersebut, masing-masing satu nama host pilihan Anda, *Service type* **HTTP** dengan URL `caddy:80`, tanpa path. Biarkan *HTTP Host Header override* kosong agar Host publik asli sampai ke Caddy; **jangan** aktifkan *No TLS Verify* (origin memang HTTP). Biarkan dashboard membuat CNAME untuk tiap hostname.
+
+6. Pastikan HTTP publik dialihkan ke HTTPS di edge. Untuk tiap hostname, buat **Single Redirect** rule: *Request URL* wildcard `http://<host>/*`, *Target URL* `https://<host>/${1}`, status `301`, *Preserve query string* aktif. Cakupan rule hanya host-host ini; jangan mengubah kebijakan HTTPS layanan lain di zone. Tunggu *edge certificate* tiap hostname aktif. Tidak ada layer login Cloudflare Access tambahan — autentikasi demo tetap di Authentik/Poznote.
+
+7. Aktifkan konektor setelah kedua akun admin diganti:
+    ```
+    $ sudo docker compose --profile tunnel pull cloudflared
+    $ sudo docker compose --profile tunnel up -d cloudflared
+    ```
+    Pantau status **Healthy** dan log konektor di dashboard sebelum mengonfigurasi integrasi publik di bagian Cara Pemakaian. IT-Tools tetap tertutup (*fails closed*) sampai provider-nya dibuat.
+
+8. Jaringan: tetap nonaktifkan *port forwarding* 80/443 di router. Firewall VM cukup mengizinkan *outbound* DNS, HTTPS (*pull image*, discovery OIDC Poznote), dan TCP/UDP 7844 untuk Cloudflare Tunnel; pertahankan SSH dari jaringan administrasi; **jangan** buka inbound 80/443/9000/9443/8040. Isolasi ingress mengandalkan binding Docker yang dihapus/di-loopback (`docker-compose.tunnel.yml`), bukan `ufw` saja.
+
+    Migrasi dari deployment LAN yang sudah berjalan: hentikan konektor dulu bila ada, pertahankan secret `.env` dan *named volume* (`down -v` dilarang), salin `docker-compose.tunnel.yml` + `Caddyfile.tunnel`, set `COMPOSE_FILE`, lalu `sudo docker compose up -d` untuk mengganti binding. Selesaikan penggantian akun admin yang belum diganti lewat SSH loopback sebelum mengaktifkan kembali konektor.
+
 # Konfigurasi
 [`^ kembali ke atas ^`](#)
 
@@ -217,31 +291,47 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
     <!-- TODO: screenshot; sebutkan bahwa IT-Tools sendiri tidak punya fitur login -->
 
 4. **Login Poznote lewat OIDC**
-    1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**.
-    2. *Redirect URI* (strict): `https://poznote-demo.lab.local/oidc/callback`. Scope: `openid`, `profile`, `email`. Catat **Client ID** dan **Client Secret**.
+    1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**. Pilih *application slug* `poznote` (dipakai di URL issuer, jadi harus konsisten).
+    2. *Redirect URI* (strict): `https://poznote-demo.lab.local/oidc_callback.php`. Scope: `openid`, `profile`, `email`. Catat **Client ID** dan **Client Secret**.
+
+       > Callback Poznote memakai file `oidc_callback.php` di root — bukan `/oidc/callback`. Jika provider Poznote sudah ada dari setup lama, **edit** provider itu daripada menduplikasinya.
     3. Buka `https://poznote-demo.lab.local` dan login dengan akun default:
        - Username: `admin_change_me`
        - Password: `admin`
-       - Ganti password setelah login pertama.
+       - Ganti **username dan password** administrator sebelum paparan apa pun terjadi.
     4. Di Poznote: **Settings > Admin Tools > OIDC / SSO**, aktifkan OIDC dengan isian berikut:
 
         | Field | Isi |
         |---|---|
         | Enabled | ✓ |
-        | Issuer | `https://auth-demo.lab.local/application/o/<application-slug>/` |
+        | Issuer | `https://auth-demo.lab.local/application/o/poznote/` |
         | Provider Name | `Authentik` |
         | Scopes | `openid profile email` |
         | Auto-create Users | ✓ |
 
-    5. Masukkan **Client ID** dan **Client Secret** ke environment variables Poznote di `docker-compose.override.yml`:
-       ```yaml
-       poznote:
-         environment:
-           POZNOTE_OIDC_CLIENT_ID: "<client-id>"
-           POZNOTE_OIDC_CLIENT_SECRET: "<client-secret>"
+        Biarkan *Discovery URL* kosong: Poznote menurunkannya dengan menambahkan `/.well-known/openid-configuration` ke *Issuer URL*. Poznote membangun callback/logout dari nama host permintaan, jadi pastikan hostnya sesuai Redirect URI yang terdaftar. Jangan pakai issuer ber-HTTP/internal; jangan ubah login lokal Poznote menjadi SSO-only.
+    5. Masukkan **Client ID** dan **Client Secret** ke `/opt/authentik/.env` (interpolasi Compose, bukan secret literal di YAML):
        ```
-    6. Restart kontainer: `docker compose down && docker compose up -d`
+       POZNOTE_OIDC_CLIENT_ID=<client-id>
+       POZNOTE_OIDC_CLIENT_SECRET=<client-secret>
+       ```
+       Kedua variabel ini sudah di-wire ke environment container Poznote (di `docker-compose.override.yml` untuk mode LAN, di `docker-compose.tunnel.yml` untuk mode tunnel).
+    6. Buat ulang hanya kontainer Poznote — `down` seluruh stack tidak diperlukan:
+       ```
+       $ sudo docker compose up -d poznote
+       ```
     7. Keluar dari Poznote. Halaman login sekarang menampilkan tombol "Continue with Authentik"; pengguna baru otomatis mendapatkan akun Poznote sendiri.
+
+
+    #### Untuk mode tunnel (publik)
+
+    Nilai host publik harus sama di environment Caddy (`.env`), route Cloudflare, provider, dan pengaturan Poznote.
+
+    - **Embedded Outpost**: karena bootstrap lokal tadi memakai `http://localhost:9000`, Authentik mengira URL utamanya localhost. Buka **Applications → Outposts → authentik Embedded Outpost → Edit**, set `authentik_host` ke URL browser penuh: `https://<AUTH_PUBLIC_HOST>/`. Biarkan `authentik_host_browser` kosong (URL browser sama, bukan issuer kedua).
+    - **IT-Tools**: provider **Proxy** mode **Forward auth (single application)**, *External host* `https://<TOOLS_PUBLIC_HOST>`; tambahkan aplikasi ke embedded outpost dan ikat kebijakan/grup `demo-users` seperti pada mode LAN. Jangan pernah menghubungkan hostname Cloudflare langsung ke `it-tools:80`. Tanpa sesi, `https://<TOOLS_PUBLIC_HOST>/` harus melalui pemeriksaan login outpost dulu (keamanan *fail closed*).
+    - **Poznote**: provider **OAuth2/OpenID**, Confidential client, *Redirect URI* (strict) `https://<POZNOTE_PUBLIC_HOST>/oidc_callback.php`, scope `openid profile email`. Jika provider sudah ada, edit; gunakan slug yang sama secara konsisten.
+    - Di Poznote **Settings > Admin Tools > OIDC / SSO**: Enabled, Issuer `https://<AUTH_PUBLIC_HOST>/application/o/poznote/`, Provider Name `Authentik`, Scopes `openid profile email`, Auto-create Users aktif; biarkan Discovery URL kosong. Container Poznote harus bisa menjangkau issuer dan JWKS publik tersebut (koneksi keluar lewat tunnel) — jangan pakai issuer container-name/HTTP, split DNS, atau bypass TLS.
+    - Simpan **Client ID/Secret** ke `/opt/authentik/.env` lalu buat ulang hanya Poznote: `sudo docker compose up -d poznote`.
 
 5. **Pendaftaran MFA**: TOTP dan/atau passkey <!-- TODO -->
 
@@ -252,11 +342,15 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 8. **Audit log (Events)**: login berhasil, percobaan gagal, dan penolakan kebijakan <!-- TODO -->
 
 #### Alur Demo
-1. Buka `tools-demo.lab.local` → dialihkan ke login Authentik.
+Mode LAN memakai `tools-demo.lab.local` / `poznote-demo.lab.local`. Mode tunnel menggantinya dengan host publik: `https://<TOOLS_PUBLIC_HOST>` / `https://<POZNOTE_PUBLIC_HOST>` / `https://<AUTH_PUBLIC_HOST>`.
+
+1. Buka host IT-Tools (`tools-demo.lab.local` atau `https://<TOOLS_PUBLIC_HOST>`) → dialihkan ke login Authentik.
 2. Login dengan MFA → IT-Tools tampil (tanpa login tambahan).
-3. Buka `poznote-demo.lab.local` → klik login dengan Authentik → masuk otomatis (SSO) dengan akun Poznote milik sendiri.
+3. Buka host Poznote (`poznote-demo.lab.local` atau `https://<POZNOTE_PUBLIC_HOST>`) → klik login dengan Authentik → masuk otomatis (SSO) dengan akun Poznote milik sendiri.
 4. Login sebagai pengguna di luar grup → akses ditolak oleh *policy*.
 5. Tunjukkan kejadian tersebut di *audit log*.
+
+Pada mode tunnel tidak perlu entri *hosts file* di komputer browser dan tidak perlu mempercayai CA lokal Caddy: DNS dan sertifikat TLS ditangani Cloudflare.
 
 
 
@@ -318,6 +412,15 @@ Keycloak tetap menjadi alternatif self-hosted matang berbasis Java untuk kebutuh
 4. [IT-Tools](https://github.com/CorentinTh/it-tools)
 5. [Poznote Documentation](https://github.com/timothepoznanski/poznote)
 6. [Auth0 Documentation](https://auth0.com/docs)
+7. [Cloudflare Tunnel — Get started](https://developers.cloudflare.com/tunnel/get-started/)
+8. [Cloudflare Tunnel — Run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
+9. [Cloudflare Tunnel — Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
+10. [Cloudflare — Redirect requests to a different hostname](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-all-different-hostname/)
+11. [Authentik — Reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
+12. [Authentik — Embedded Outpost](https://docs.goauthentik.io/add-secure-apps/outposts/embedded/)
+13. [Authentik — Caddy forward auth](https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_caddy/)
+14. [Docker — Merge Compose files](https://docs.docker.com/reference/compose-file/merge/)
+15. [Docker — Predefined environment variables](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
 
 
