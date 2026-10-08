@@ -33,8 +33,8 @@ tools-demo.lab.local {
 	reverse_proxy it-tools:80
 }
 
-# ---- Demo app 2: Memos, logs in through OIDC (no forward auth needed)
-memos-demo.lab.local {
+# ---- Demo app 2: Poznote, logs in through OIDC
+poznote-demo.lab.local {
 	tls internal
-	reverse_proxy memos:5230
+	reverse_proxy poznote:80
 }

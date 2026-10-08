@@ -20,12 +20,6 @@ services:
       - caddy_config:/config
     depends_on:
       - server
-    # Fallback if Memos cannot reach Authentik by its public name:
-    # let containers resolve the public hostname to Caddy.
-    # networks:
-    #   default:
-    #     aliases:
-    #       - auth-demo.lab.local
 
   # Demo app 1: static developer tools, no login of its own -> forward auth
   it-tools:
@@ -33,13 +27,13 @@ services:
     restart: unless-stopped
 
   # Demo app 2: lightweight notes app with per-user accounts -> OIDC
-  memos:
-    image: neosmemo/memos:stable
+  poznote:
+    image: ghcr.io/timothepoznanski/poznote:latest
     restart: unless-stopped
     volumes:
-      - memos_data:/var/opt/memos
+      - poznote_data:/app/data
 
 volumes:
   caddy_data:
   caddy_config:
-  memos_data:
+  poznote_data:

@@ -3,7 +3,7 @@
 # Target: fresh Debian 12/13 or Ubuntu 22.04+ VM
 # Usage:  sudo ./setup.sh [--harden] [--demo]
 #   --harden  also configure ufw, unattended-upgrades and fail2ban
-#   --demo    also deploy Caddy (HTTPS reverse proxy) + IT-Tools + Memos
+#   --demo    also deploy Caddy (HTTPS reverse proxy) + IT-Tools + Poznote
 #             (needs Caddyfile and docker-compose.override.yml next to this script)
 #
 # The script is idempotent: re-running it will not regenerate secrets
@@ -175,7 +175,7 @@ if [ "$ready" = true ]; then
   log "Authentik is up"
   if [ "$DEMO" = true ]; then
     echo "1) On the machine running your browser, add this line to its hosts file:"
-    echo "   ${ip}  auth-demo.lab.local tools-demo.lab.local memos-demo.lab.local"
+    echo "   ${ip}  auth-demo.lab.local tools-demo.lab.local poznote-demo.lab.local"
     echo "2) Create the admin account (choose your own password) at:"
     echo "   https://auth-demo.lab.local/if/flow/initial-setup/"
     echo "   (the browser will warn about Caddy's local certificate authority)"

@@ -48,8 +48,8 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 #### IT-Tools (contoh aplikasi tanpa login: forward auth)
 **IT-Tools** adalah kumpulan alat bantu developer berbasis web (konversi base64, pembuat hash, generator UUID, dan sebagainya). Aplikasinya statis, sangat ringan, dan **tidak punya sistem login sama sekali**. Karena itu ia cocok untuk mendemokan bahwa Authentik dapat melindungi aplikasi apa pun, bahkan yang tidak tahu apa-apa soal autentikasi.
 
-#### Memos (contoh aplikasi dengan akun pengguna: OIDC)
-**Memos** adalah aplikasi catatan ringan yang punya akun per pengguna dan mendukung login lewat OIDC. Setiap pengguna hanya melihat catatannya sendiri, sehingga jelas terlihat bahwa login melalui Authentik membuat akun terpisah untuk tiap orang.
+#### Poznote (contoh aplikasi dengan akun pengguna: OIDC)
+**Poznote** adalah aplikasi catatan modern yang mendukung login lewat OIDC. Setiap pengguna memiliki workspace sendiri dengan catatan terpisah, sehingga jelas terlihat bahwa login melalui Authentik membuat akun individual untuk tiap orang.
 
 #### Forward auth vs OIDC
 
@@ -59,7 +59,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 | Aplikasi harus mendukung? | Tidak | Ya |
 | Akun per pengguna di aplikasi | Tidak (hanya header identitas) | Ya |
 | Yang bekerja | Caddy + Authentik | Aplikasi + Authentik |
-| Contoh pada demo | IT-Tools | Memos |
+| Contoh pada demo | IT-Tools | Poznote |
 
 <!-- TODO: diagram alur kedua mekanisme -->
 
@@ -70,7 +70,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 
 #### Kebutuhan Sistem :
 - Debian 12+ / Ubuntu 22.04+ (VM)
-- RAM minimal 2 GB (disarankan 3-4 GB jika demo Caddy + IT-Tools + Memos ikut dijalankan)
+- RAM minimal 2 GB (disarankan 3-4 GB jika demo Caddy + IT-Tools + Poznote ikut dijalankan)
 - CPU 2 core
 - Disk 20 GB
 - Docker Engine dan Docker Compose plugin
@@ -121,7 +121,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik (Authentik sudah bisa diakses 
 
 7. Pada komputer yang menjalankan browser, tambahkan nama host ke *hosts file* (`/etc/hosts` di Linux/macOS, `C:\Windows\System32\drivers\etc\hosts` di Windows):
     ```
-    <ip-vm>  auth-demo.lab.local tools-demo.lab.local memos-demo.lab.local
+    <ip-vm>  auth-demo.lab.local tools-demo.lab.local poznote-demo.lab.local
     ```
 
 8. Buka `https://auth-demo.lab.local/if/flow/initial-setup/` (atau `http://<ip-vm>:9000/if/flow/initial-setup/` tanpa Caddy) dan buat akun admin. Browser akan memperingatkan soal sertifikat karena CA lokal Caddy belum dipercaya; untuk demo peringatan ini dapat dilewati.
@@ -167,7 +167,7 @@ Seluruh konfigurasi Caddy ada di [`Caddyfile`](Caddyfile). Setiap blok mewakili 
 |---|---|---|
 | `auth-demo.lab.local` | `server:9000` | Antarmuka Authentik |
 | `tools-demo.lab.local` | `it-tools:80` | IT-Tools, dilindungi *forward auth* |
-| `memos-demo.lab.local` | `memos:5230` | Memos, login lewat OIDC |
+| `poznote-demo.lab.local` | `poznote:80` | Poznote, login lewat OIDC |
 
 Pada blok `tools-demo.lab.local`, direktif `forward_auth` membuat Caddy bertanya ke Authentik apakah pengguna sudah login sebelum permintaan diteruskan ke IT-Tools, dan menyalin header identitas (`X-Authentik-Username`, dll.) ke aplikasi.
 
@@ -187,14 +187,14 @@ Jalankan [setup.sh](setup.sh) pada VM Debian/Ubuntu baru (dengan `Caddyfile` dan
 $ sudo ./setup.sh --harden --demo
 ```
 - `--harden`: mengatur `ufw`, `unattended-upgrades`, dan `fail2ban`
-- `--demo`: ikut menjalankan Caddy, IT-Tools, dan Memos
+- `--demo`: ikut menjalankan Caddy, IT-Tools, dan Poznote
 
 Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), *deploy* Authentik (dan aplikasi demo, opsional), lalu menunggu sampai layanan sehat. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada.
 
 #### Cara 2: Blueprint (konfigurasi sebagai kode)
 Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otomatis, sehingga seluruh lingkungan demo dapat dibuat ulang dengan satu perintah.
 
-<!-- TODO: contoh blueprint YAML untuk grup, aplikasi IT-Tools, dan aplikasi Memos -->
+<!-- TODO: contoh blueprint YAML untuk grup, aplikasi IT-Tools, dan aplikasi Poznote -->
 
 #### Cara 3: LXC (Proxmox helper script)
 <!-- TODO: opsional, bandingkan dengan instalasi Docker (lebih ringan dan mudah di-snapshot, tetapi kurang portabel) -->
@@ -216,27 +216,32 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 
     <!-- TODO: screenshot; sebutkan bahwa IT-Tools sendiri tidak punya fitur login -->
 
-4. **Login Memos lewat OIDC**
-    1. Di Authentik: **Applications → Create with Provider**. Nama `Memos`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**.
-    2. *Redirect URI* (strict): `https://memos-demo.lab.local/auth/callback`. Scope: `openid`, `profile`, `email`. Catat **Client ID** dan **Client Secret**.
-    3. Buka `https://memos-demo.lab.local` dan buat akun admin Memos yang pertama (akun lokal).
-    4. Di Memos: **Settings → SSO**, tambahkan penyedia OAuth2 dengan isian berikut:
+4. **Login Poznote lewat OIDC**
+    1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**.
+    2. *Redirect URI* (strict): `https://poznote-demo.lab.local/oidc/callback`. Scope: `openid`, `profile`, `email`. Catat **Client ID** dan **Client Secret**.
+    3. Buka `https://poznote-demo.lab.local` dan login dengan akun default:
+       - Username: `admin_change_me`
+       - Password: `admin`
+       - Ganti password setelah login pertama.
+    4. Di Poznote: **Settings > Admin Tools > OIDC / SSO**, aktifkan OIDC dengan isian berikut:
 
         | Field | Isi |
         |---|---|
-        | Client ID / Client secret | dari Authentik |
-        | Auth URL | `https://auth-demo.lab.local/application/o/authorize/` |
-        | Token URL | `http://server:9000/application/o/token/` |
-        | User info URL | `http://server:9000/application/o/userinfo/` |
+        | Enabled | ✓ |
+        | Issuer | `https://auth-demo.lab.local/application/o/<application-slug>/` |
+        | Provider Name | `Authentik` |
         | Scopes | `openid profile email` |
-        | Field identitas / nama / email | `preferred_username` / `name` / `email` |
+        | Auto-create Users | ✓ |
 
-    5. Keluar dari Memos. Halaman login sekarang menampilkan tombol login dengan Authentik; pengguna baru otomatis mendapatkan akun Memos sendiri.
-
-    Catatan: *Auth URL* dipakai oleh browser sehingga memakai nama HTTPS publik, sedangkan *Token URL* dan *User info URL* dipanggil langsung oleh kontainer Memos sehingga cukup memakai alamat internal Docker. Dengan begitu kontainer tidak perlu mempercayai sertifikat Caddy.
-
-    <!-- TODO: nama field dan menu bisa berbeda antar versi Memos; cocokkan dengan dokumentasi Memos -->
-    <!-- TODO: jika token exchange gagal, aktifkan blok "aliases" di docker-compose.override.yml dan pasang root CA Caddy pada kontainer Memos (SSL_CERT_FILE) -->
+    5. Masukkan **Client ID** dan **Client Secret** ke environment variables Poznote di `docker-compose.override.yml`:
+       ```yaml
+       poznote:
+         environment:
+           POZNOTE_OIDC_CLIENT_ID: "<client-id>"
+           POZNOTE_OIDC_CLIENT_SECRET: "<client-secret>"
+       ```
+    6. Restart kontainer: `docker compose down && docker compose up -d`
+    7. Keluar dari Poznote. Halaman login sekarang menampilkan tombol "Continue with Authentik"; pengguna baru otomatis mendapatkan akun Poznote sendiri.
 
 5. **Pendaftaran MFA**: TOTP dan/atau passkey <!-- TODO -->
 
@@ -249,7 +254,7 @@ Blueprint adalah file YAML yang membuat pengguna, grup, dan aplikasi secara otom
 #### Alur Demo
 1. Buka `tools-demo.lab.local` → dialihkan ke login Authentik.
 2. Login dengan MFA → IT-Tools tampil (tanpa login tambahan).
-3. Buka `memos-demo.lab.local` → klik login dengan Authentik → masuk otomatis (SSO) dengan akun Memos milik sendiri.
+3. Buka `poznote-demo.lab.local` → klik login dengan Authentik → masuk otomatis (SSO) dengan akun Poznote milik sendiri.
 4. Login sebagai pengguna di luar grup → akses ditolak oleh *policy*.
 5. Tunjukkan kejadian tersebut di *audit log*.
 
@@ -311,7 +316,7 @@ Keycloak tetap menjadi alternatif self-hosted matang berbasis Java untuk kebutuh
 2. [Docker Engine install on Debian](https://docs.docker.com/engine/install/debian/)
 3. [Caddy Documentation](https://caddyserver.com/docs/)
 4. [IT-Tools](https://github.com/CorentinTh/it-tools)
-5. [Memos Documentation](https://www.usememos.com/docs)
+5. [Poznote Documentation](https://github.com/timothepoznanski/poznote)
 6. [Auth0 Documentation](https://auth0.com/docs)
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
 
@@ -328,8 +333,8 @@ Pembagian tugas (5 orang):
 
 Hal yang perlu diperhatikan:
 - Tugas meminta VM lokal. Menjalankan Docker di dalam LXC Proxmox butuh nesting dan bisa merepotkan; gunakan VM untuk proyek, pindah ke homelab setelahnya (opsional).
-- Karena belum pernah memakai SSO, kerjakan IT-Tools (forward auth) dulu, baru Memos (OIDC).
-- Demo mandiri: Caddy, IT-Tools, dan Memos ada di compose stack yang sama sehingga tidak bergantung pada jaringan homelab.
+- Karena belum pernah memakai SSO, kerjakan IT-Tools (forward auth) dulu, baru Poznote (OIDC).
+- Demo mandiri: Caddy, IT-Tools, dan Poznote ada di compose stack yang sama sehingga tidak bergantung pada jaringan homelab.
 - Pakai bridged networking pada VM supaya bisa diakses dari browser lewat IP sendiri.
 - Setelah demo, hapus baris hosts file supaya tidak bentrok dengan Authentik di LXC nanti.
 -->
