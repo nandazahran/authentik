@@ -233,7 +233,8 @@ else
   CADDY_FILE="Caddyfile.tunnel"
 fi
 
-for f in docker-compose.override.yml "${OVERLAY}" "${CADDY_FILE}" blueprint.yaml; do
+for f in docker-compose.override.yml "${OVERLAY}" "${CADDY_FILE}" \
+         docker-compose.blueprint.yml blueprint.yaml; do
   if [ ! -f "$f" ]; then
     cp "${SCRIPT_DIR}/${f}" "$f"
     echo "Copied ${f}"
@@ -250,7 +251,6 @@ if [ -n "$current_compose_file" ] \
   die "COMPOSE_FILE in .env is '${current_compose_file}' and does not include ${OVERLAY}. Edit /opt/authentik/.env and set COMPOSE_FILE to select the intended overlay (docker-compose.yml:docker-compose.override.yml:${OVERLAY}), then re-run."
 fi
 
-add_env_key COMPOSE_FILE "docker-compose.yml:docker-compose.override.yml:${OVERLAY}"
 add_env_key AUTH_PUBLIC_HOST "${AUTH_HOST}"
 add_env_key TOOLS_PUBLIC_HOST "${TOOLS_HOST}"
 add_env_key POZNOTE_PUBLIC_HOST "${POZNOTE_HOST}"
@@ -259,6 +259,21 @@ add_env_key POZNOTE_PUBLIC_HOST "${POZNOTE_HOST}"
 # membaca nilai yang sama dari .env. add_env_key tidak menimpa nilai lama.
 add_env_key POZNOTE_OIDC_CLIENT_ID "$(openssl rand -hex 20 | tr 'A-F' 'a-f')"
 add_env_key POZNOTE_OIDC_CLIENT_SECRET "$(openssl rand -base64 48 | tr -d '\n' | tr '/+' '_-')"
+
+# COMPOSE_FILE: mode overlay + blueprint overlay (opt-in lewat setup.sh;
+# deployment manual tanpa setup.sh tidak usah menambahkannya).
+if ! grep -qE '^COMPOSE_FILE=.*docker-compose.blueprint.yml' .env; then
+  COMPOSE_FILE_LINE="docker-compose.yml:docker-compose.override.yml:${OVERLAY}:docker-compose.blueprint.yml"
+  if grep -q '^COMPOSE_FILE=' .env; then
+    sed -i "s|^COMPOSE_FILE=.*|COMPOSE_FILE=${COMPOSE_FILE_LINE}|" .env
+    echo "Updated COMPOSE_FILE to include the blueprint overlay"
+  else
+    echo "COMPOSE_FILE=${COMPOSE_FILE_LINE}" >> .env
+    echo "Added COMPOSE_FILE to .env"
+  fi
+else
+  echo "COMPOSE_FILE already includes the blueprint overlay, keeping it."
+fi
 chmod 600 .env
 
 if [ "$MODE" = tunnel ] && [ ! -f cloudflared.env ]; then
@@ -305,7 +320,7 @@ Next steps:
    only answers through Caddy behind the Authentik gate.
 
 5) The demo blueprint (group demo-users, IT-Tools + Poznote providers,
-   embedded outpost host) is mounted at /blueprints/demo.yaml. The worker
+   embedded outpost host) is mounted at /blueprints/custom/demo.yaml. The worker
    auto-applies it within a minute of the admin setup completing — verify
    under Admin interface > Applications: group demo-users, apps IT-Tools
    and Poznote. Poznote OIDC settings must still be enabled in its UI:

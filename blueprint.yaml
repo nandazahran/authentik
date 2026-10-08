@@ -65,15 +65,16 @@ entries:
       is_superuser: false
 
   # --------------------------------------------- RSA signing key untuk Poznote
-  # Nama unik demo; !Find tidak dipakai di sini karena key pair harus milik
-  # stack ini. CertificateKeyPair tanpa cert data = Authentik membuat RSA
-  # key pair baru.
-  - model: authentik_crypto.certificatekeypair
-    id: poznote-signing-key
-    identifiers:
-      name: demo-poznote-signing-key
-    attrs:
-      name: demo-poznote-signing-key
+  # Blueprint TIDAK bisa membuat key pair RSA: CertificateKeyPair via
+  # blueprint tanpa certificate_data/key_data menghasilkan record tanpa
+  # kunci (crypto/api.py memvalidasi PEM, crypto/apps.py hanya menghasilkan
+  # key lewat CertificateBuilder pada reconcile). Solusinya: pakai key pair
+  # internal bawaan (goauthentik.io/crypto/jwt-managed, "authentik Internal
+  # JWT Certificate") yang dijamin ada di setiap instalasi — dibuat RSA oleh
+  # CertificateBuilder (crypto/apps.py _create_update_cert).
+  #
+  # Lookup dilakukan langsung di signing_key provider (lihat entri provider),
+  # bukan sebagai entri terpisah.
 
   # ------------------------------------------------ IT-Tools: proxy provider
   - model: authentik_providers_proxy.proxyprovider
@@ -139,7 +140,10 @@ entries:
         ]
       # RSA: Poznote menolak JWKS tanpa kunci RSA (oidc.php: kty !== 'RSA'
       # di-skip). Tanpa signing_key, Authentik memakai HS256 + client secret.
-      signing_key: !KeyOf poznote-signing-key
+      signing_key: !Find [
+          authentik_crypto.certificatekeypair,
+          [managed, goauthentik.io/crypto/jwt-managed],
+      ]
       authorization_flow: !Find [
           authentik_flows.flow,
           [slug, default-provider-authorization-implicit-consent],
@@ -155,15 +159,19 @@ entries:
       provider: !KeyOf poznote-provider
 
   # ------------------------------------ embedded outpost: host + providers list
-  # providers di-set eksplisit supaya kedua provider demo ter-attach;
-  # tanpa ini forward auth IT-Tools tidak pernah melayani hostname publik.
-  # Ditempatkan TERAKHIR: butuh PK kedua provider dari entri di atas.
+  # providers di-set eksplisit supaya provider IT-Tools ter-attach; tanpa
+  # ini forward auth tidak pernah melayani hostname publik. Ditempatkan
+  # TERAKHIR: butuh PK provider dari entri di atas.
+  # HANYA IT-Tools: outposts/api/outposts.py validate_providers memetakan
+  # outpost type proxy strictly ke ProxyProvider — provider OAuth2 Poznote
+  # ditolak keras. Poznote memakai OIDC langsung (authorization code flow),
+  # bukan lewat outpost. type: proxy eksplisit karena kolom required.
   - model: authentik_outposts.outpost
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
+      type: proxy
       config:
         authentik_host: !Format ["https://%s/", !Env AUTH_PUBLIC_HOST]
       providers:
         - !KeyOf it-tools-provider
-        - !KeyOf poznote-provider

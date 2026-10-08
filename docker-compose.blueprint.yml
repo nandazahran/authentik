@@ -1,0 +1,36 @@
+# docker-compose.blueprint.yml — overlay OPT-IN untuk automasi blueprint
+#
+# File ini TIDAK dimasukkan otomatis ke COMPOSE_FILE. Aktif dengan menambah
+# ":docker-compose.blueprint.yml" di COMPOSE_FILE /opt/authentik/.env,
+# atau lewat setup.sh yang melakukannya sendiri.
+#
+# setup.sh juga menyalinnya ke /opt/authentik. Mengapa opt-in: blueprint
+# memakai state:present — setiap diterapkan ulang ia MENIMPA field provider
+# (external host, scope, signing key) dengan nilai dari file. Bila Anda
+# mengonfigurasi provider lewat UI Authentik, blueprint aktif akan terus
+# mengembalikan nilai lamanya. Mount ini hanya untuk deployment yang memang
+# ingin konfigurasi sebagai kode.
+#
+# Env di bawah membaca .env (interpolasi Compose) — sumber nilai untuk tag
+# !Env di blueprint.yaml.
+
+services:
+  server:
+    volumes:
+      - ./blueprint.yaml:/blueprints/custom/demo.yaml:ro
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:-}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:-}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:-}
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
+
+  worker:
+    volumes:
+      - ./blueprint.yaml:/blueprints/custom/demo.yaml:ro
+    environment:
+      AUTH_PUBLIC_HOST: ${AUTH_PUBLIC_HOST:-}
+      TOOLS_PUBLIC_HOST: ${TOOLS_PUBLIC_HOST:-}
+      POZNOTE_PUBLIC_HOST: ${POZNOTE_PUBLIC_HOST:-}
+      POZNOTE_OIDC_CLIENT_ID: ${POZNOTE_OIDC_CLIENT_ID:-}
+      POZNOTE_OIDC_CLIENT_SECRET: ${POZNOTE_OIDC_CLIENT_SECRET:-}
