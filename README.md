@@ -277,7 +277,7 @@ Pada blok IT-Tools, handler dibungkus `route` dengan urutan: (1) path `/outpost.
 Dengan otomatisasi, seluruh instalasi dan konfigurasi dapat direproduksi.
 
 #### Cara 1: Shell script
-Jalankan [setup.sh](setup.sh) pada server Debian/Ubuntu baru (dengan `docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel` di folder yang sama). Script ini menggantikan seluruh Langkah Bersama + langkah `.env`/salin file pada Opsi A/B di atas:
+Jalankan [setup.sh](setup.sh) pada server Debian/Ubuntu baru (dengan `docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel` di folder yang sama). Bila file belum *executable* (mis. diunduh tanpa izin git), beri izin dulu: `chmod +x setup.sh`. Script ini menggantikan seluruh Langkah Bersama + langkah `.env`/salin file pada Opsi A/B di atas:
 ```
 $ sudo ./setup.sh --vps auth.example.com tools.example.com poznote.example.com --harden
 $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.com --harden
