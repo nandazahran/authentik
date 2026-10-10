@@ -108,6 +108,15 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
     $ sudo curl -fsSL -o /opt/authentik/docker-compose.yml https://docs.goauthentik.io/compose.yml
     ```
 
+4. Klon repo ini. Semua langkah berikutnya — Opsi A, Opsi B, maupun `setup.sh` — memakai file yang sama dari repo ini (Compose override, overlay, Caddyfile), jadi file harus sudah ada di server:
+    ```
+    $ sudo apt-get update && sudo apt-get install -y git
+    $ cd ~ && git clone https://github.com/nandazahran/authentik.git
+    $ cd ~/authentik
+    $ ls
+    ```
+    `apt-get update` dulu supaya index paket tidak kosong/basi (image minimal menjalankan Docker steps di atas yang sudah update; `apt-get install -y git` tanpa efek bila git sudah ada). Klon juga menjaga bit *executable* `setup.sh`, sehingga tidak muncul `Permission denied` seperti saat file diunduh satu per satu tanpa git. Sudah pernah klon? Jangan klon ulang (git akan menolak karena folder sudah ada) — cukup `cd ~/authentik && git pull --ff-only`. Isi folder kerja setelah cloning: `README.md`, `setup.sh`, `Caddyfile`/`Caddyfile.tunnel`, `docker-compose.*.yml`, `blueprint.yaml`.
+
 Nama host contoh di bawah (`auth.example.com`, `tools.example.com`, `poznote.example.com`) hanyalah contoh, bukan nilai harfiah. Gunakan tiga FQDN yang berbeda di domain Anda: mis. `auth.<domain>`, `tools.<domain>`, `poznote.<domain>`, dan gunakan nilainya secara konsisten di `.env`, DNS, dan pengaturan provider. Bila sebuah label sudah dipakai record lain, jangan ditimpa: pilih label lain (mis. tambah `-demo`).
 
 <!-- TODO: screenshot setiap langkah, seperti pada contoh laporan -->
@@ -118,8 +127,9 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
 
 1. Buat tiga DNS record `A`/`AAAA` yang mengarah ke IP publik VPS, satu untuk tiap nama host. Tunggu DNS menyebar (cek dengan `dig +short <host>`).
 
-2. Dari **direktori repo** (tempat file konfigurasi ini berada), salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
+2. Dari repo hasil `git clone` di Langkah Bersama (folder `~/authentik`), salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
     ```
+    $ cd ~/authentik
     $ sudo cp docker-compose.override.yml docker-compose.vps.yml Caddyfile /opt/authentik/
     $ cd /opt/authentik
     $ echo "PG_PASS=$(openssl rand -base64 36 | tr -d '\n')" | sudo tee .env
@@ -181,8 +191,9 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
 
 Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `cloudflared` melakukan koneksi *outbound* ke Cloudflare, HTTPS dihentikan di edge Cloudflare, dan Caddy dihubungi lewat jaringan internal Compose. Syarat: domain yang dikelola akun Cloudflare Anda. Selesaikan dulu Langkah Bersama di atas, lalu lanjut:
 
-1. Dari **direktori repo**, salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
+1. Dari repo hasil `git clone` di Langkah Bersama (folder `~/authentik`), salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
     ```
+    $ cd ~/authentik
     $ sudo cp docker-compose.override.yml docker-compose.tunnel.yml Caddyfile.tunnel /opt/authentik/
     $ cd /opt/authentik
     $ echo "PG_PASS=$(openssl rand -base64 36 | tr -d '\n')" | sudo tee .env
@@ -239,7 +250,7 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
 
 7. Jaringan: tetap nonaktifkan *port forwarding* 80/443 di router. Firewall cukup mengizinkan *outbound* DNS, HTTPS (*pull image*, discovery OIDC Poznote), dan TCP/UDP 7844 untuk Cloudflare Tunnel; pertahankan SSH dari jaringan administrasi; **jangan** buka inbound 80/443/9000/9443/8040. Isolasi ingress mengandalkan binding Docker yang dihapus/di-loopback (`docker-compose.tunnel.yml`), bukan `ufw` saja. Internet, waktu aktif komputer, dan konektor adalah prasyarat ketersediaan publik.
 
-    Pindah antar opsi: pertahankan secret `.env` dan *named volume* (`down -v` dilarang, jangan regenerasi `AUTHENTIK_SECRET_KEY`), salin overlay + Caddyfile opsi tujuan, set `COMPOSE_FILE` yang sesuai, lalu `sudo docker compose up -d` untuk mengganti binding. Selesaikan penggantian akun admin yang belum diganti lewat SSH loopback sebelum mengaktifkan kembali ingress publik.
+    Pindah antar opsi: pertahankan secret `.env` dan *named volume* (`down -v` dilarang, jangan regenerasi `AUTHENTIK_SECRET_KEY`), salin overlay + Caddyfile opsi tujuan **dari folder repo `~/authentik`**, set `COMPOSE_FILE` yang sesuai, lalu `sudo docker compose up -d` untuk mengganti binding. Selesaikan penggantian akun admin yang belum diganti lewat SSH loopback sebelum mengaktifkan kembali ingress publik.
 
 #### Menyalakan/Mematikan VM
 
@@ -314,11 +325,16 @@ Pada blok IT-Tools, handler dibungkus `route` dengan urutan: (1) path `/outpost.
 Dengan otomatisasi, seluruh instalasi dan konfigurasi dapat direproduksi.
 
 #### Cara 1: Shell script
-Jalankan [setup.sh](setup.sh) pada server Debian/Ubuntu baru (dengan `docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel` di folder yang sama). Bila file belum *executable* (mis. diunduh tanpa izin git), beri izin dulu: `chmod +x setup.sh`. Script ini menggantikan seluruh Langkah Bersama + langkah `.env`/salin file pada Opsi A/B di atas:
+Prasyarat dari Langkah Bersama hanya **repo hasil `git clone`** (langkah 4): script membaca file pendampingnya (`docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel`) dari folder yang sama dan **menolak jalan** bila salah satu tidak ada; ia sendiri tidak melakukan clone. Script **menggantikan langkah 2–3 Langkah Bersama** (instal Docker + unduh `docker-compose.yml`) — bila Docker sudah terpasang, script melewatinya, jadi aman dijalankan setelah Langkah Bersama maupun langsung pada server baru (langkah 1, login SSH, tetap milik Anda). Siapkan checkout dulu, lalu jalankan script dari situ:
 ```
+$ sudo apt-get update && sudo apt-get install -y git
+$ if [ -d ~/authentik/.git ]; then git -C ~/authentik pull --ff-only; else git clone https://github.com/nandazahran/authentik.git ~/authentik; fi
+$ cd ~/authentik
 $ sudo ./setup.sh --vps auth.example.com tools.example.com poznote.example.com --harden
 $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.com --harden
 ```
+Baris kedua hanya menarik update bila repo sudah ada dan **tidak menyembunyikan kegagalan**: clone gagal (DNS/auth/jaringan) berhenti dengan pesan git, bukan diam-diam diteruskan. Lewat `git clone` bit *executable* `setup.sh` ikut terjaga (mode `100755` di git).
+
 - `--vps` / `--tunnel`: pilih mode hosting sesuai bagian Instalasi; tiga argumen host adalah FQDN publik Anda.
 - `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`. Di Ubuntu, `fail2ban` ada di komponen `universe` (aktif secara default); bila sources Anda sudah dikustom dan `universe` tidak aktif, aktifkan dulu: `sudo add-apt-repository universe`.
 
@@ -327,12 +343,12 @@ Deteksi OS di dalam script menerima `debian` maupun `ubuntu`, dan repo Docker di
 Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan seluruh backend privat** (`server`, `worker`, `poznote`, `it-tools`) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
 
 #### Cara 2: Compose deklaratif
-Seluruh *stack* juga tergambar sebagai file deklaratif: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile. Cukup `docker compose up -d` untuk mereproduksi instalasi di server baru.
+Seluruh *stack* juga tergambar sebagai file deklaratif dari repo ini: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile. Klon repo ke `~/authentik`, salin file-file itu **dari `~/authentik` ke `/opt/authentik`**, set `COMPOSE_FILE` sesuai mode, lalu `docker compose up -d` untuk mereproduksi instalasi di server baru.
 
 #### Blueprint (opsi ketiga, opt-in: konfigurasi sebagai kode)
 Instalasi manual di Opsi A/B **tidak memakai blueprint**. Provider dikonfigurasi lewat UI Authentik di bagian Cara Pemakaian, dan itu jalur yang sepenuhnya valid. Blueprint adalah alternatif otomatis: [`blueprint.yaml`](blueprint.yaml) membuat grup `demo-users`, provider Proxy IT-Tools, provider OAuth2 Poznote (confidential, *redirect URI* `oidc_callback.php`, scope eksplisit, *signing key* RSA), kedua *application*-nya, dan `authentik_host` embedded outpost ke URL publik, mencegah bug "outpost menunjuk localhost" sejak awal.
 
-**Mengapa opt-in:** blueprint memakai `state: present`. Setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: salin kedua file itu ke `/opt/authentik`, lalu tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE` dan `docker compose up -d server worker`.)
+**Mengapa opt-in:** blueprint memakai `state: present`. Setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: dari folder repo hasil `git clone`, salin kedua file itu ke `/opt/authentik`, lalu tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE` dan `docker compose up -d server worker`.)
 
 Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori *custom*, *packaged defaults* Authentik tidak tertimpa. Sesuai dokumentasi resmi, *worker* melakukan *auto-discovery*: file baru otomatis dibuat *instance*-nya dan diterapkan; perubahan file memicu *apply* ulang. Urutan dependensi (flow *implicit-consent* + *scope mappings* sistem) dijamin lewat entri `metaapplyblueprint` karena *discovery order* tidak dijamin. *Signing key* dipilih lewat lookup `!Find` ke key pair internal bawaan Authentik (`goauthentik.io/crypto/jwt-managed`, RSA), blueprint tidak bisa membuat key pair RSA sendiri, dan Poznote hanya menerima JWKS `kty=RSA`. Provider OAuth2 Poznote sengaja **tidak** di-*attach* ke outpost (outpost proxy menolak non-ProxyProvider), sehingga tidak muncul di daftar aplikasi outpost. Blueprint dibuat dari pengalaman deployment nyata, bukan contoh kosong.
 
@@ -421,7 +437,7 @@ Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment Opsi B:
 | Tombol login OIDC Poznote tidak muncul | `oidc_is_enabled()` Poznote hanya cek: toggle Enabled, Issuer terisi, dan `POZNOTE_OIDC_CLIENT_ID` terisi di environment, bukan koneksi jaringan | Tambahkan Client ID/Secret ke `.env` lalu `sudo docker compose up -d poznote`; pastikan toggle Enabled tersimpan |
 | Lupa kata sandi admin Poznote | Hash password per-profil disimpan di `master.db` | Ikuti [Lost administrator password di TROUBLESHOOTING.md upstream](https://github.com/timothepoznanski/poznote/blob/main/docs/TROUBLESHOOTING.md): set `users.password_hash = NULL` dan `password_login_disabled = 0` untuk admin tsb (henti ingress dulu), login dengan kata sandi default, **langsung ganti** |
 | HTTP publik tidak dialihkan / query string hilang setelah redirect | Rule Single Redirect belum dibuat, atau *Preserve query string* belum diaktifkan (default: nonaktif!) | Buat rule per host `http://<host>/*` → `https://<host>/${1}`, 301, dan **aktifkan** *Preserve query string* secara eksplisit sebelum Deploy |
-| `setup.sh` → `Permission denied` | File tidak *executable* (bit eksekusi hilang saat diunduh tanpa git) | `chmod +x setup.sh`. Versi repo sekarang sudah menyimpan bit executable di git |
+| `setup.sh` → `Permission denied` | File tidak *executable* (bit eksekusi hilang saat file diunduh satu per satu, mis. via `curl`/SFTP) | Ikuti Langkah Bersama: `git clone` repo ini, lalu jalankan script dari folder tersebut (bit executable sudah tersimpan di git). Kalau tetap perlu perbaikan seketika: `chmod +x setup.sh` |
 | Tidak bisa SSH ke VM VirtualBox (NAT default) | VirtualBox mode NAT tidak meneruskan port ke host; VM tidak punya IP yang bisa dijangkau host secara langsung | VirtualBox → VM → Settings → Network → Port Forwarding: isi **Host IP `127.0.0.1`**, Host Port `2222`, Guest Port `22`. Lalu dari host: `ssh -p 2222 user@127.0.0.1` dan bootstrap `ssh -p 2222 -N -L 9000:127.0.0.1:9000 -L 8040:127.0.0.1:8040 user@127.0.0.1`. Jangan biarkan Host IP kosong, itu mengekspos SSH ke semua antarmuka host |
 | IT-Tools tidak bisa diakses lewat `localhost` seperti Authentik/Poznote | Sesuai desain: IT-Tools tidak punya port host sama sekali (tidak ada yang perlu di-*bootstrap*), hanya bisa lewat Caddy di balik gerbang forward-auth | Akses selalu lewat `https://<TOOLS_PUBLIC_HOST>`; buat provider Proxy dulu bila belum |
 

@@ -164,6 +164,9 @@ lowest=$(printf '%s\n2.24.4\n' "$compose_version" | sort -V | head -1)
 log "3/5 Base hardening"
 
 if [ "$HARDEN" = true ]; then
+  # Fresh hosts (and Docker-skipped runs) may not have run apt-get update yet,
+  # so the package index can be empty/stale here.
+  apt-get update
   apt-get install -y ufw unattended-upgrades fail2ban
 
   # allow SSH BEFORE enabling the firewall so we don't lock ourselves out
