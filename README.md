@@ -115,7 +115,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
     $ cd ~/authentik
     $ ls
     ```
-    `apt-get update` dulu supaya index paket tidak kosong/basi (image minimal menjalankan Docker steps di atas yang sudah update; `apt-get install -y git` tanpa efek bila git sudah ada). Klon juga menjaga bit *executable* `setup.sh`, sehingga tidak muncul `Permission denied` seperti saat file diunduh satu per satu tanpa git. Sudah pernah klon? Jangan klon ulang (git akan menolak karena folder sudah ada) — cukup `cd ~/authentik && git pull --ff-only`. Isi folder kerja setelah cloning: `README.md`, `setup.sh`, `Caddyfile`/`Caddyfile.tunnel`, `docker-compose.*.yml`, `blueprint.yaml`.
+    `apt-get update` dulu supaya index paket tidak kosong/basi; langkah Docker di atas sudah memanggilnya, sehingga baris ini biasanya cepat, dan `install -y` tanpa efek bila git sudah ada. Klon juga menjaga bit *executable* `setup.sh`, sehingga tidak muncul `Permission denied` seperti saat file diunduh satu per satu tanpa git. Sudah pernah klon? Jangan klon ulang (git akan menolak karena folder sudah ada) — cukup `cd ~/authentik && git pull --ff-only`. Isi folder kerja setelah cloning: `README.md`, `setup.sh`, `Caddyfile`/`Caddyfile.tunnel`, `docker-compose.*.yml`, `blueprint.yaml`.
 
 Nama host contoh di bawah (`auth.example.com`, `tools.example.com`, `poznote.example.com`) hanyalah contoh, bukan nilai harfiah. Gunakan tiga FQDN yang berbeda di domain Anda: mis. `auth.<domain>`, `tools.<domain>`, `poznote.<domain>`, dan gunakan nilainya secara konsisten di `.env`, DNS, dan pengaturan provider. Bila sebuah label sudah dipakai record lain, jangan ditimpa: pilih label lain (mis. tambah `-demo`).
 
@@ -328,8 +328,8 @@ Dengan otomatisasi, seluruh instalasi dan konfigurasi dapat direproduksi.
 Prasyarat dari Langkah Bersama hanya **repo hasil `git clone`** (langkah 4): script membaca file pendampingnya (`docker-compose.override.yml`, `docker-compose.vps.yml`/`docker-compose.tunnel.yml`, `Caddyfile`/`Caddyfile.tunnel`) dari folder yang sama dan **menolak jalan** bila salah satu tidak ada; ia sendiri tidak melakukan clone. Script **menggantikan langkah 2–3 Langkah Bersama** (instal Docker + unduh `docker-compose.yml`) — bila Docker sudah terpasang, script melewatinya, jadi aman dijalankan setelah Langkah Bersama maupun langsung pada server baru (langkah 1, login SSH, tetap milik Anda). Siapkan checkout dulu, lalu jalankan script dari situ:
 ```
 $ sudo apt-get update && sudo apt-get install -y git
-$ if [ -d ~/authentik/.git ]; then git -C ~/authentik pull --ff-only; else git clone https://github.com/nandazahran/authentik.git ~/authentik; fi
-$ cd ~/authentik
+$ if [ -d ~/authentik/.git ]; then git -C ~/authentik pull --ff-only || exit 1; else git clone https://github.com/nandazahran/authentik.git ~/authentik || exit 1; fi
+$ cd ~/authentik || exit 1
 $ sudo ./setup.sh --vps auth.example.com tools.example.com poznote.example.com --harden
 $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.com --harden
 ```
