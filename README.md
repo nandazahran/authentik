@@ -74,7 +74,7 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
 - RAM minimal 2 GB (disarankan 3-4 GB jika demo Caddy + IT-Tools + Poznote ikut dijalankan)
 - CPU 2 core
 - Disk 20 GB
-- Docker Engine dan Docker Compose plugin (Opsi B butuh Compose >= 2.24.4 untuk `!override`/`!reset`)
+- Docker Engine dan Docker Compose plugin — semua deployment butuh Compose >= 2.24.4: tag `!override` dipakai di **kedua** overlay (`docker-compose.vps.yml` dan `docker-compose.tunnel.yml`), `!reset` di overlay tunnel. Lihat [Docker: Merge Compose files](#referensi).
 - Satu domain dengan DNS yang Anda kelola; tiga subdomain untuk Authentik, IT-Tools, dan Poznote
 
 #### Langkah Bersama: Instal Docker
@@ -84,17 +84,23 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
     $ ssh user@<ip-server>
     ```
 
-2. Instal Docker dari repositori resmi Docker (bukan `docker.io` bawaan distro).
+2. Instal Docker dari repositori resmi Docker (bukan `docker.io` bawaan distro). **Bila sebelumnya sudah pernah memasang Docker**, hapus dulu paket bawaan yang bentrok:
+    ```
+    $ sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc | cut -f1)
+    ```
+    Daftar mengikuti instruksi resmi Docker; `dpkg --get-selections` hanya menyertakan paket yang benar-benar terpasang (`apt` boleh melaporkan bahwa sebagian paket tidak ada — aman diabaikan). Perintah ini **hanya menghapus paket, tidak menghapus data**: kontainer, image, dan volume lama tetap di `/var/lib/docker`, jadi tidak ada container Authentik/Postgres yang hilang.
     ```
     $ sudo apt-get update
     $ sudo apt-get install -y ca-certificates curl gnupg
     $ sudo install -m 0755 -d /etc/apt/keyrings
-    $ sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    $ sudo curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg -o /etc/apt/keyrings/docker.asc
     $ sudo chmod a+r /etc/apt/keyrings/docker.asc
-    $ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list
+    $ . /etc/os-release
+    $ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list
     $ sudo apt-get update
     $ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     ```
+    `$ID` menyesuaikan repo Docker secara otomatis (`debian` di Debian, `ubuntu` di Ubuntu), dan `${UBUNTU_CODENAME:-$VERSION_CODENAME}` memilih suite yang benar di kedua distro. Versi Ubuntu yang didukung Docker: 22.04 (jammy), 24.04 (noble), dan 26.04 (resolute).
 
 3. Unduh `docker-compose.yml` resmi Authentik.
     ```
@@ -173,7 +179,7 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
 
 #### Opsi B: Komputer Lokal via Cloudflare Tunnel
 
-Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `cloudflared` melakukan koneksi *outbound* ke Cloudflare, HTTPS dihentikan di edge Cloudflare, dan Caddy dihubungi lewat jaringan internal Compose. Syarat: domain yang dikelola akun Cloudflare Anda, dan Docker Compose plugin >= 2.24.4 (diperlukan tag `!override`/`!reset` di `docker-compose.tunnel.yml`). Selesaikan dulu Langkah Bersama di atas, lalu lanjut:
+Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `cloudflared` melakukan koneksi *outbound* ke Cloudflare, HTTPS dihentikan di edge Cloudflare, dan Caddy dihubungi lewat jaringan internal Compose. Syarat: domain yang dikelola akun Cloudflare Anda. Selesaikan dulu Langkah Bersama di atas, lalu lanjut:
 
 1. Dari **direktori repo**, salin konfigurasi ke `/opt/authentik`, lalu buat dan isi `.env`:
     ```
@@ -314,7 +320,9 @@ $ sudo ./setup.sh --vps auth.example.com tools.example.com poznote.example.com -
 $ sudo ./setup.sh --tunnel auth.example.com tools.example.com poznote.example.com --harden
 ```
 - `--vps` / `--tunnel`: pilih mode hosting sesuai bagian Instalasi; tiga argumen host adalah FQDN publik Anda.
-- `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`.
+- `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`. Di Ubuntu, `fail2ban` ada di komponen `universe` (aktif secara default); bila sources Anda sudah dikustom dan `universe` tidak aktif, aktifkan dulu: `sudo add-apt-repository universe`.
+
+Deteksi OS di dalam script menerima `debian` maupun `ubuntu`, dan repo Docker dipilih otomatis (`linux/${ID}` + suite `${UBUNTU_CODENAME:-$VERSION_CODENAME}`), persis seperti instruksi resmi Docker: Ubuntu 22.04 (jammy), 24.04 (noble), 26.04 (resolute), serta Debian 12 (bookworm)/13 (trixie) keduanya didukung Docker tanpa perubahan script.
 
 Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan seluruh backend privat** (`server`, `worker`, `poznote`, `it-tools`) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak akan mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
 
@@ -476,19 +484,20 @@ Keycloak tetap menjadi alternatif self-hosted matang berbasis Java untuk kebutuh
 
 1. [Authentik Documentation](https://docs.goauthentik.io/)
 2. [Docker Engine install on Debian](https://docs.docker.com/engine/install/debian/)
-3. [Caddy Documentation](https://caddyserver.com/docs/)
-4. [IT-Tools](https://github.com/CorentinTh/it-tools)
-5. [Poznote Documentation](https://github.com/timothepoznanski/poznote)
-6. [Auth0 Documentation](https://auth0.com/docs)
-7. [Cloudflare Tunnel: Get started](https://developers.cloudflare.com/tunnel/get-started/)
-8. [Cloudflare Tunnel: Run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
-9. [Cloudflare Tunnel: Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
-10. [Cloudflare: Redirect requests to a different hostname](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-all-different-hostname/)
-11. [Authentik: Reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
-12. [Authentik: Embedded Outpost](https://docs.goauthentik.io/add-secure-apps/outposts/embedded/)
-13. [Authentik: Caddy forward auth](https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_caddy/)
-14. [Docker: Merge Compose files](https://docs.docker.com/reference/compose-file/merge/)
-15. [Docker: Predefined environment variables](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
+3. [Docker Engine install on Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
+4. [Caddy Documentation](https://caddyserver.com/docs/)
+5. [IT-Tools](https://github.com/CorentinTh/it-tools)
+6. [Poznote Documentation](https://github.com/timothepoznanski/poznote)
+7. [Auth0 Documentation](https://auth0.com/docs)
+8. [Cloudflare Tunnel: Get started](https://developers.cloudflare.com/tunnel/get-started/)
+9. [Cloudflare Tunnel: Run parameters](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)
+10. [Cloudflare Tunnel: Tunnel with firewall](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/tunnel-with-firewall/)
+11. [Cloudflare: Redirect requests to a different hostname](https://developers.cloudflare.com/rules/url-forwarding/examples/redirect-all-different-hostname/)
+12. [Authentik: Reverse proxy](https://docs.goauthentik.io/install-config/reverse-proxy/)
+13. [Authentik: Embedded Outpost](https://docs.goauthentik.io/add-secure-apps/outposts/embedded/)
+14. [Authentik: Caddy forward auth](https://docs.goauthentik.io/add-secure-apps/providers/proxy/server_caddy/)
+15. [Docker: Merge Compose files](https://docs.docker.com/reference/compose-file/merge/)
+16. [Docker: Predefined environment variables](https://docs.docker.com/compose/how-tos/environment-variables/envvars/)
 <!-- TODO: tambahkan tutorial lain yang dipakai -->
 
 

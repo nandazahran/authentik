@@ -141,7 +141,7 @@ else
   curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /etc/apt/keyrings/docker.asc
   chmod a+r /etc/apt/keyrings/docker.asc
 
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/${ID} ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" \
     > /etc/apt/sources.list.d/docker.list
 
   apt-get update
@@ -152,8 +152,9 @@ fi
 docker --version
 docker compose version
 
-# Both overlays use !override (server/poznote ports), which needs
-# Compose >= 2.24.4. Checked AFTER installation so fresh hosts pass too.
+# Both overlays use !override (server/poznote ports) and the tunnel overlay
+# also !reset (caddy.ports), which needs Compose >= 2.24.4. Checked AFTER
+# installation so fresh hosts pass too.
 compose_version=$(docker compose version --short 2>/dev/null | tr -dc '0-9.' || true)
 lowest=$(printf '%s\n2.24.4\n' "$compose_version" | sort -V | head -1)
 [ "$lowest" = "2.24.4" ] \
