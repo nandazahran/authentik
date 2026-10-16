@@ -1,0 +1,15 @@
+[Unit]
+Description=Authentik rootless Podman containers
+ConditionPathExists=%h/.local/share/authentik/.container-runtime
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=300
+TimeoutStopSec=120
+ExecStartPre=/usr/bin/grep -qx podman-rootless %h/.local/share/authentik/.container-runtime
+ExecStart=/usr/bin/podman start --all --filter label=com.docker.compose.project=authentik
+ExecStop=/usr/bin/podman stop --all --filter label=com.docker.compose.project=authentik --time 60
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,19 @@
+# docker-compose.podman.yml: rootless Podman storage overlay
+#
+# Manual file order in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.<mode>.yml:docker-compose.podman.yml
+# where <mode> is vps or tunnel. Automated installs append
+# :docker-compose.blueprint.yml LAST so its worker blueprint mount survives
+# this overlay's volume replacement. Docker deployments never include this file.
+#
+# Upstream docker-compose.yml mounts /var/run/docker.sock into worker for the
+# embedded outpost integration. Rootless Podman must not receive that socket
+# (nor the user Podman socket): replace worker volumes wholesale with only the
+# shared data/certs/templates binds. The worker entrypoint (ak) chowns
+# /data and /certs, then drops to authentik; server runs as image USER 1000.
+services:
+  worker:
+    volumes: !override
+      - ./data:/data
+      - ./certs:/certs
+      - ./custom-templates:/templates

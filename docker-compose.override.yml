@@ -9,7 +9,7 @@
 services:
   # Reverse proxy: HTTPS entry point + forward-auth gatekeeper
   caddy:
-    image: caddy:2
+    image: docker.io/library/caddy:2
     restart: unless-stopped
     ports:
       - "80:80"
@@ -28,7 +28,7 @@ services:
 
   # Demo app 1: static developer tools, no login of its own -> forward auth
   it-tools:
-    image: corentinth/it-tools:latest
+    image: docker.io/corentinth/it-tools:latest
     restart: unless-stopped
 
   # Demo app 2: lightweight notes app with per-user accounts -> OIDC
