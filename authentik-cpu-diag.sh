@@ -146,7 +146,6 @@ else echo "(postgresql not running)"; fi
 
 section S14 CONFIG
 $DC config --quiet && echo "config: OK" || echo "config: INVALID (see error above)"
-} > "$OUT" 2>&1
+} 2>&1 | tee "$OUT"
 
 echo "wrote $OUT ($(wc -l <"$OUT") lines)"
-cat "$OUT"

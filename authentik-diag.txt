@@ -1,0 +1,288 @@
+
+===== [S1] HOST =====
+$ date
+Fri Oct 16 11:22:26 WIB 2026
+$ uptime
+ 11:22:26 up 4 min,  2 users,  load average: 2.55, 1.71, 0.76
+$ nproc
+2
+# host load + mem
+$ cat /proc/loadavg
+2.55 1.71 0.76 2/300 9029
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            1958         806         600          24         745        1151
+Swap:              0           0           0
+
+===== [S2] COMPOSE-FILES =====
+# COMPOSE_FILE decides whether the blueprint (and thus outpost config) is live
+COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.tunnel.yml:docker-compose.blueprint.yml
+# overlay files present in /opt/authentik
+present: docker-compose.tunnel.yml
+present: docker-compose.blueprint.yml
+present: docker-compose.override.yml
+
+===== [S3] CONTAINERS-IMAGES-RESTARTS =====
+SERVICE      IMAGE                                     STATUS                             PORTS
+it-tools     corentinth/it-tools:latest                Up 4 minutes                       80/tcp
+postgresql   docker.io/library/postgres:16-alpine      Up 4 minutes (healthy)             5432/tcp
+poznote      ghcr.io/timothepoznanski/poznote:latest   Up 4 minutes                       9000/tcp, 127.0.0.1:8040->80/tcp
+server       ghcr.io/goauthentik/server:2026.8.3       Up 16 seconds (health: starting)   127.0.0.1:9000->9000/tcp
+worker       ghcr.io/goauthentik/server:2026.8.3       Up 15 seconds (health: starting)
+# image tags (version facts) + restart counts
+server ghcr.io/goauthentik/server:2026.8.3 | 16 restarts | started 2026-10-16T04:22:10.684900621Z
+worker ghcr.io/goauthentik/server:2026.8.3 | 16 restarts | started 2026-10-16T04:22:11.368755729Z
+postgresql docker.io/library/postgres:16-alpine | 0 restarts | started 2026-10-16T04:17:44.487760516Z
+cloudflared: (not running)
+caddy: (not running)
+# worker mounts (blueprint.yaml mounted => blueprint overlay live)
+/opt/authentik/certs -> /certs
+/opt/authentik/data -> /data
+/opt/authentik/custom-templates -> /templates
+/opt/authentik/blueprint.yaml -> /blueprints/custom/demo.yaml
+/var/run/docker.sock -> /var/run/docker.sock
+
+
+===== [S4] CPU-SNAPSHOT-1 =====
+# averaged since container start — inflated if recently restarted
+$ sudo docker stats --no-stream --format table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.PIDs}}
+NAME                     CPU %     MEM USAGE / LIMIT     PIDS
+authentik-worker-1       86.84%    36.9MiB / 1.912GiB    7
+authentik-server-1       113.19%   47.34MiB / 1.912GiB   7
+authentik-poznote-1      0.02%     83.18MiB / 1.912GiB   9
+authentik-postgresql-1   1.56%     50.6MiB / 1.912GiB    8
+authentik-it-tools-1     0.00%     9.328MiB / 1.912GiB   3
+
+===== [S5] CPU-SNAPSHOT-2 =====
+# 20s later — this one is real-time
+$ sudo docker stats --no-stream --format table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.PIDs}}
+NAME                     CPU %     MEM USAGE / LIMIT     PIDS
+authentik-worker-1       114.64%   175.6MiB / 1.912GiB   10
+authentik-server-1       128.54%   161.2MiB / 1.912GiB   9
+authentik-poznote-1      0.03%     83.18MiB / 1.912GiB   9
+authentik-postgresql-1   9.12%     52.88MiB / 1.912GiB   9
+authentik-it-tools-1     0.00%     9.328MiB / 1.912GiB   3
+
+===== [S6] HOT-THREADS =====
+# main-pid jiffies delta over 8s + top threads by cumulative CPU
+server: main pid 9768, +0 jiffies in 8s
+   tid=9768 jiffies=5 cmd=dumb-init--akserver
+worker: main pid 9806, +-5 jiffies in 8s
+postgresql: main pid 1704, +0 jiffies in 8s
+   tid=1704 jiffies=34 cmd=postgres
+
+===== [S7] HEALTH =====
+$ curl -fsS --max-time 5 http://127.0.0.1:9000/-/health/live/
+curl: (56) Recv failure: Connection reset by peer
+# AUTH_PUBLIC_HOST from .env (value shown here only)
+host=auth.nandazahran.my.id
+$ curl -s -o /dev/null --max-time 10 -w public /-/health/live/ -> %{http_code} in %{time_total}s\n https://auth.nandazahran.my.id/-/health/live/
+public /-/health/live/ -> 530 in 0.347242s
+
+===== [S8] SELF-DIAL-FROM-SERVER =====
+# can the server container resolve + reach its own public URL? (Branch A discriminator)
+2606:4700:3031::6815:5773 auth.nandazahran.my.id
+2606:4700:3037::ac43:8f06 auth.nandazahran.my.id
+sh: 1: curl: not found
+SELF-DIAL-FAIL
+
+===== [S9] TUNNEL =====
+$ sudo docker compose --profile tunnel ps --format table {{.Service}}\t{{.Image}}\t{{.Status}} cloudflared
+SERVICE   IMAGE     STATUS
+# cloudflared last 40 lines
+
+===== [S10] LOG-CADENCE =====
+# per-minute counts; ~60min ticks = blueprint scan, NOT the CPU cause
+--- server ---
+    932 server-1
+--- worker ---
+    884 worker-1
+--- postgresql ---
+    141 postgresql-1
+--- cloudflared ---
+
+===== [S11] LOG-TAILS =====
+# worker last 60 (blueprint tracebacks land here)
+worker-1  | 2026-10-16T04:23:45.230759056Z          0: one or more workers have exited unexpectedly
+worker-1  | 2026-10-16T04:23:45.230765087Z
+worker-1  | 2026-10-16T04:23:45.230769337Z       Location:
+worker-1  | 2026-10-16T04:23:45.230773796Z          src/worker/mod.rs:317
+worker-1  | 2026-10-16T04:23:45.230778520Z
+worker-1  | 2026-10-16T04:23:45.230783092Z         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+worker-1  | 2026-10-16T04:23:45.230788380Z
+worker-1  | 2026-10-16T04:23:45.230792765Z          0: tokio::task::runtime.spawn with kind=task task.name=authentik::worker::watch_workers task.id=13 size.bytes=824 loc.file="src/worker/mod.rs" loc.line=340 loc.col=10
+worker-1  | 2026-10-16T04:23:45.230798187Z             at /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/util/trace.rs:69
+worker-1  | 2026-10-16T04:23:45.230802963Z
+worker-1  | 2026-10-16T04:23:45.230807304Z         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+worker-1  | 2026-10-16T04:23:45.230812537Z          1: clone<unknown>
+worker-1  | 2026-10-16T04:23:45.230817326Z             at <unknown source file>:<unknown line>
+worker-1  | 2026-10-16T04:23:45.230822238Z
+worker-1  | 2026-10-16T04:23:45.230826793Z       Run with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.]
+worker-1  | 2026-10-16T04:23:45.230831408Z
+worker-1  | 2026-10-16T04:23:45.230835619Z Location:
+worker-1  | 2026-10-16T04:23:45.230839917Z    src/main.rs:146
+worker-1  | 2026-10-16T04:23:45.230844481Z
+worker-1  | 2026-10-16T04:23:45.230848803Z   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+worker-1  | 2026-10-16T04:23:45.230864117Z
+worker-1  | 2026-10-16T04:23:45.230869184Z    0: tokio::task::runtime.spawn with kind=block_on task.name= task.id=3 size.bytes=15520 loc.file="src/main.rs" loc.line=94 loc.col=10
+worker-1  | 2026-10-16T04:23:45.230874352Z       at /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/util/trace.rs:69
+worker-1  | 2026-10-16T04:23:45.230879085Z
+worker-1  | 2026-10-16T04:23:45.230883386Z   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+worker-1  | 2026-10-16T04:23:45.230888459Z    1: __libc_start_main<unknown>
+worker-1  | 2026-10-16T04:23:45.230894243Z       at <unknown source file>:<unknown line>
+worker-1  | 2026-10-16T04:23:45.230899094Z
+worker-1  | 2026-10-16T04:23:45.230903405Z Run with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.
+worker-1  | 2026-10-16T04:23:47.957424985Z {"event": "Loaded config", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124627.9546852, "file": "/authentik/lib/default.yml"}
+worker-1  | 2026-10-16T04:23:47.959175013Z {"event": "Loaded environment variables", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124627.9568703, "count": 6}
+worker-1  | 2026-10-16T04:23:47.959227816Z {"event": "Starting authentik bootstrap", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124627.9572992}
+worker-1  | 2026-10-16T04:23:48.048781412Z {"event": "PostgreSQL connection successful", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124628.043799}
+worker-1  | 2026-10-16T04:23:48.048822179Z {"event": "Finished authentik bootstrap", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124628.0463076}
+worker-1  | 2026-10-16T04:23:48.148549625Z {"event": "Bootstrap completed", "level": "info", "logger": "bootstrap"}
+worker-1  | 2026-10-16T04:23:48.153016613Z docker:x:986:authentik
+worker-1  | 2026-10-16T04:23:48.401061284Z {"filename":"src/main.rs","level":"info","line_number":53,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.400077","event":"authentik is starting","version":"2026.8.3"}
+worker-1  | 2026-10-16T04:23:48.401490583Z {"filename":"src/main.rs","level":"trace","line_number":69,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.401267","event":"installing error formatting"}
+worker-1  | 2026-10-16T04:23:48.401522420Z {"filename":"src/main.rs","level":"trace","line_number":74,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.401371","event":"initializing Python"}
+worker-1  | 2026-10-16T04:23:48.458101446Z {"filename":"src/main.rs","level":"trace","line_number":76,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.456236","event":"Python initialized"}
+worker-1  | 2026-10-16T04:23:48.458171727Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":192,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.456376","event":"loading config"}
+worker-1  | 2026-10-16T04:23:48.458183876Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":195,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.457221","event":"config loaded"}
+worker-1  | 2026-10-16T04:23:48.458191104Z {"filename":"packages/ak-common/src/tls/mod.rs","level":"trace","line_number":45,"pid":7,"target":"authentik_common::tls","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.457292","event":"installing rustls crypto provider"}
+worker-1  | 2026-10-16T04:23:48.462799564Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":274,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.458213","event":"starting config file watcher"}
+worker-1  | 2026-10-16T04:23:48.462834986Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":44,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.458327","event":"starting signals watcher"}
+worker-1  | 2026-10-16T04:23:48.462842606Z {"filename":"src/metrics/mod.rs","level":"info","line_number":42,"pid":7,"target":"authentik::metrics","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.458588","event":"installing Prometheus recorder"}
+worker-1  | 2026-10-16T04:23:48.462848764Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":74,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.459020","event":"initializing database pool"}
+worker-1  | 2026-10-16T04:23:48.462855146Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":237,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.459251","event":"config file watcher started","paths":"[]"}
+worker-1  | 2026-10-16T04:23:48.462861178Z {"filename":"src/metrics/mod.rs","level":"info","line_number":57,"pid":7,"target":"authentik::metrics","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.459293","event":"starting metrics upkeep runner"}
+worker-1  | 2026-10-16T04:23:48.462867083Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":28,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.460588","addr":"[::]:9300","event":"starting metrics server"}
+worker-1  | 2026-10-16T04:23:48.462874347Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":81,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.460413","addr":"\"/dev/shm/authentik-metrics.sock\" (pathname)","event":"starting metrics server"}
+worker-1  | 2026-10-16T04:23:48.477271261Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":53,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.477054","event":"starting database watcher for config changes"}
+worker-1  | 2026-10-16T04:23:48.477515397Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":115,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.477431","event":"database pool initialized"}
+worker-1  | 2026-10-16T04:23:48.477652012Z {"filename":"src/worker/mod.rs","level":"info","line_number":66,"pid":7,"target":"authentik::worker","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:48.477588","event":"starting worker","worker_id":1000}
+worker-1  | 2026-10-16T04:23:48.479599497Z {"filename":"src/worker/mod.rs","level":"info","line_number":289,"pid":7,"target":"authentik::worker","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.479444","event":"starting worker watcher"}
+worker-1  | 2026-10-16T04:23:48.479863655Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":28,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.479790","addr":"[::]:9000","event":"starting worker server"}
+worker-1  | 2026-10-16T04:23:48.483874128Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":81,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.481821","addr":"\"/dev/shm/authentik.sock\" (pathname)","event":"starting worker server"}
+worker-1  | 2026-10-16T04:23:48.489327160Z {"filename":"src/worker/worker_status.rs","level":"warn","line_number":38,"pid":7,"target":"authentik::worker::worker_status","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:48.484916","err":"\n   0: \u001b[91merror returned from database: relation \"authentik_tasks_workerstatus\" does not exist at line 1449\u001b[0m\n   1: \u001b[91mrelation \"authentik_tasks_workerstatus\" does not exist at line 1449\u001b[0m\n\nLocation:\n   \u001b[35msrc/worker/worker_status.rs\u001b[0m:\u001b[35m18\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n   0: \u001b[91mtokio::task\u001b[0m\u001b[91m::\u001b[0m\u001b[91mruntime.spawn\u001b[0m with \u001b[96mkind=task task.name=authentik::worker::worker_status::run task.id=14 size.bytes=728 loc.file=\"src/worker/mod.rs\" loc.line=345 loc.col=10\u001b[0m\n      at \u001b[35m/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/util/trace.rs\u001b[0m:\u001b[35m69\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n   1: \u001b[91mclone\u001b[0m\u001b[90m<unknown>\u001b[0m\n      at \u001b[35m<unknown source file>\u001b[0m:\u001b[35m<unknown line>\u001b[0m\n\nRun with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.","event":"failed to update worker status in database"}
+worker-1  | 2026-10-16T04:23:49.447228118Z {"event": "Loaded config", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124629.4453976, "file": "/authentik/lib/default.yml"}
+worker-1  | 2026-10-16T04:23:49.447277939Z {"event": "Loaded environment variables", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124629.4461138, "count": 6}
+# server last 60 (outpost 'Failed to fetch outpost configuration' lands here)
+server-1  | 2026-10-16T04:23:40.420127512Z       at <unknown source file>:<unknown line>
+server-1  | 2026-10-16T04:23:40.420151116Z
+server-1  | 2026-10-16T04:23:40.420160279Z Run with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.
+server-1  | 2026-10-16T04:23:40.420221944Z {"filename":"src/server/mod.rs","level":"warn","line_number":147,"pid":7,"target":"authentik::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:40.415364","code":"ExitStatus(unix_wait_status(256))","event":"server has exited"}
+server-1  | 2026-10-16T04:23:40.420245060Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":239,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:40.415541","event":"arbiter has been told to shutdown immediately"}
+server-1  | 2026-10-16T04:23:40.420253125Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":250,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:40.415683","event":"all webservers have been shutdown, shutting down the other tasks immediately"}
+server-1  | 2026-10-16T04:23:40.420260275Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":80,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:40.415879","event":"stopping signals watcher"}
+server-1  | 2026-10-16T04:23:40.420267206Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":66,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:40.416003","event":"stopping database watcher for config changes"}
+server-1  | 2026-10-16T04:23:40.420274392Z {"filename":"src/server/tls.rs","level":"warn","line_number":92,"pid":7,"target":"authentik::server::tls","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:40.416037","event":"we were told to shutdown before starting the tls watcher"}
+server-1  | 2026-10-16T04:23:40.420281408Z {"filename":"src/server/mod.rs","level":"warn","line_number":364,"pid":7,"target":"authentik::server","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:40.416100","event":"we were told to shutdown before starting the embedded outpost"}
+server-1  | 2026-10-16T04:23:40.420289719Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":257,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:40.416129","event":"arbiter has been told to shutdown gracefully"}
+server-1  | 2026-10-16T04:23:40.420296605Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":265,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:40.416201","event":"stopping config file watcher"}
+server-1  | 2026-10-16T04:23:40.420303578Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":270,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:40.416206","event":"all webservers have been shutdown, shutting down the other tasks gracefully"}
+server-1  | 2026-10-16T04:23:40.420347004Z {"filename":"src/main.rs","level":"error","line_number":145,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:40.416426","err":"[\n   0: \u001b[91mthe server has exited unexpectedly\u001b[0m\n\nLocation:\n   \u001b[35msrc/server/mod.rs\u001b[0m:\u001b[35m245\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n   0: \u001b[91mtokio::task\u001b[0m\u001b[91m::\u001b[0m\u001b[91mruntime.spawn\u001b[0m with \u001b[96mkind=task task.name=authentik::server::watch_server task.id=13 size.bytes=824 loc.file=\"src/server/mod.rs\" loc.line=326 loc.col=10\u001b[0m\n      at \u001b[35m/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/util/trace.rs\u001b[0m:\u001b[35m69\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n   1: \u001b[91mclone\u001b[0m\u001b[90m<unknown>\u001b[0m\n      at \u001b[35m<unknown source file>\u001b[0m:\u001b[35m<unknown line>\u001b[0m\n\nRun with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.]","event":"authentik encountered errors"}
+server-1  | 2026-10-16T04:23:43.468252668Z {"event": "Loaded config", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124623.4667852, "file": "/authentik/lib/default.yml"}
+server-1  | 2026-10-16T04:23:43.477705328Z {"event": "Loaded environment variables", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124623.468763, "count": 6}
+server-1  | 2026-10-16T04:23:43.477742825Z {"event": "Starting authentik bootstrap", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124623.4690816}
+server-1  | 2026-10-16T04:23:43.621554212Z {"event": "PostgreSQL connection successful", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124623.6124976}
+server-1  | 2026-10-16T04:23:43.621595550Z {"event": "Finished authentik bootstrap", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124623.6128182}
+server-1  | 2026-10-16T04:23:43.772190643Z {"event": "Bootstrap completed", "level": "info", "logger": "bootstrap"}
+server-1  | 2026-10-16T04:23:43.772225958Z {"event": "Not running as root, disabling permission fixes", "level": "info", "logger": "bootstrap"}
+server-1  | 2026-10-16T04:23:43.889258078Z {"filename":"src/main.rs","level":"info","line_number":53,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:43.885094","event":"authentik is starting","version":"2026.8.3"}
+server-1  | 2026-10-16T04:23:43.889303597Z {"filename":"src/main.rs","level":"trace","line_number":69,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:43.885528","event":"installing error formatting"}
+server-1  | 2026-10-16T04:23:43.889316296Z {"filename":"src/main.rs","level":"trace","line_number":74,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:43.885665","event":"initializing Python"}
+server-1  | 2026-10-16T04:23:44.038762080Z {"filename":"src/main.rs","level":"trace","line_number":76,"pid":7,"target":"authentik","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.027250","event":"Python initialized"}
+server-1  | 2026-10-16T04:23:44.038803948Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":192,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.027382","event":"loading config"}
+server-1  | 2026-10-16T04:23:44.038831734Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":195,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.030839","event":"config loaded"}
+server-1  | 2026-10-16T04:23:44.038840077Z {"filename":"packages/ak-common/src/tls/mod.rs","level":"trace","line_number":45,"pid":7,"target":"authentik_common::tls","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.030884","event":"installing rustls crypto provider"}
+server-1  | 2026-10-16T04:23:44.038847316Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":274,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.031755","event":"starting config file watcher"}
+server-1  | 2026-10-16T04:23:44.038853914Z {"filename":"src/metrics/mod.rs","level":"info","line_number":42,"pid":7,"target":"authentik::metrics","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.031828","event":"installing Prometheus recorder"}
+server-1  | 2026-10-16T04:23:44.038860560Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":74,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.032112","event":"initializing database pool"}
+server-1  | 2026-10-16T04:23:44.038867599Z {"filename":"packages/ak-common/src/arbiter.rs","level":"info","line_number":44,"pid":7,"target":"authentik_common::arbiter","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.037048","event":"starting signals watcher"}
+server-1  | 2026-10-16T04:23:44.038877128Z {"filename":"packages/ak-common/src/config/mod.rs","level":"info","line_number":237,"pid":7,"target":"authentik_common::config","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.037370","event":"config file watcher started","paths":"[]"}
+server-1  | 2026-10-16T04:23:44.038883534Z {"filename":"src/metrics/mod.rs","level":"info","line_number":57,"pid":7,"target":"authentik::metrics","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.037485","event":"starting metrics upkeep runner"}
+server-1  | 2026-10-16T04:23:44.038889427Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":28,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.037640","addr":"[::]:9300","event":"starting metrics server"}
+server-1  | 2026-10-16T04:23:44.038895541Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":81,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.037837","addr":"\"/dev/shm/authentik-metrics.sock\" (pathname)","event":"starting metrics server"}
+server-1  | 2026-10-16T04:23:44.079446695Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":53,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:44.075770","event":"starting database watcher for config changes"}
+server-1  | 2026-10-16T04:23:44.079496382Z {"filename":"packages/ak-common/src/db.rs","level":"info","line_number":115,"pid":7,"target":"authentik_common::db","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.075858","event":"database pool initialized"}
+server-1  | 2026-10-16T04:23:44.079506407Z {"filename":"src/server/mod.rs","level":"info","line_number":87,"pid":7,"target":"authentik::server","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.075885","event":"starting server"}
+server-1  | 2026-10-16T04:23:44.894264406Z {"filename":"src/server/mod.rs","level":"info","line_number":218,"pid":7,"target":"authentik::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.894040","event":"starting server watcher"}
+server-1  | 2026-10-16T04:23:44.898074262Z {"filename":"src/server/mod.rs","level":"info","line_number":355,"pid":7,"target":"authentik::server","thread_id":"ThreadId(1)","thread_name":"main","timestamp":"2026-10-16T04:23:44.896860","event":"waiting for gunicorn to be ready before starting embedded outpost"}
+server-1  | 2026-10-16T04:23:44.898321467Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":28,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.898209","addr":"[::]:9000","event":"starting server server"}
+server-1  | 2026-10-16T04:23:44.900434899Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":134,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.898569","addr":"[::]:9443","event":"starting server server"}
+server-1  | 2026-10-16T04:23:44.901589617Z {"filename":"src/server/tls.rs","level":"info","line_number":83,"pid":7,"target":"authentik::server::tls","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:44.901448","event":"waiting for gunicorn to be ready before starting tls watcher"}
+server-1  | 2026-10-16T04:23:44.903541777Z {"filename":"packages/ak-axum/src/server.rs","level":"info","line_number":81,"pid":7,"target":"authentik_axum::server","thread_id":"ThreadId(2)","thread_name":"tokio-0","timestamp":"2026-10-16T04:23:44.902291","addr":"\"/dev/shm/authentik.sock\" (pathname)","event":"starting server server"}
+server-1  | 2026-10-16T04:23:45.564969258Z {"event": "Loaded config", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124625.5633953, "file": "/authentik/lib/default.yml"}
+server-1  | 2026-10-16T04:23:45.567383782Z {"event": "Loaded environment variables", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124625.565467, "count": 6}
+server-1  | 2026-10-16T04:23:48.211934268Z {"filename":"src/server/mod.rs","level":"warn","line_number":179,"pid":7,"spans":[{"host":"localhost","http_headers":"{\"user_agent\": \"goauthentik.io/healthcheck\"}","method":"GET","name":"request","path":"/health/live/","remote":"::1","scheme":"http"},{"name":"health_live"},{"name":"health_live"}],"target":"authentik::server","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.201439","err":"hyper_util::client::legacy::Error(Connect, Os { code: 2, kind: NotFound, message: \"No such file or directory\" })","event":"failed to send health live request to server","name":"health_live"}
+server-1  | 2026-10-16T04:23:48.211991897Z {"filename":"packages/ak-axum/src/error.rs","level":"warn","line_number":27,"pid":7,"spans":[{"host":"localhost","http_headers":"{\"user_agent\": \"goauthentik.io/healthcheck\"}","method":"GET","name":"request","path":"/health/live/","remote":"::1","scheme":"http"}],"target":"authentik_axum::error","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.203193","err":"\n   0: \u001b[91mclient error (Connect)\u001b[0m\n   1: \u001b[91mNo such file or directory (os error 2)\u001b[0m\n\nLocation:\n   \u001b[35msrc/server/mod.rs\u001b[0m:\u001b[35m175\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n   0: \u001b[91mauthentik::server\u001b[0m\u001b[91m::\u001b[0m\u001b[91mhealth_live\u001b[0m\n      at \u001b[35msrc/server/mod.rs\u001b[0m:\u001b[35m167\u001b[0m\n   1: \u001b[91mauthentik::server::core\u001b[0m\u001b[91m::\u001b[0m\u001b[91mhealth_live\u001b[0m\n      at \u001b[35msrc/server/core.rs\u001b[0m:\u001b[35m233\u001b[0m\n   2: \u001b[91mauthentik_axum::tracing\u001b[0m\u001b[91m::\u001b[0m\u001b[91mrequest\u001b[0m with \u001b[96mpath=/health/live/ method=GET http_headers={\"user_agent\": \"goauthentik.io/healthcheck\"}\u001b[0m\n      at \u001b[35mpackages/ak-axum/src/tracing.rs\u001b[0m:\u001b[35m26\u001b[0m\n        24 │         .map(|(name, value)| (name.to_string().to_lowercase().replace('-', \"_\"), value))\n        25 │         .collect::<HashMap<_, _>>();\n  \u001b[37;1m      26 >     let span = info_span!(\u001b[0m\n        27 │         \"request\",\n        28 │         path = %request.uri(),\n   3: \u001b[91mtokio::task\u001b[0m\u001b[91m::\u001b[0m\u001b[91mruntime.spawn\u001b[0m with \u001b[96mkind=task task.name= task.id=18 size.bytes=2144 loc.file=\"/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/axum-server-0.8.0/src/server.rs\" loc.line=308 loc.col=17\u001b[0m\n      at \u001b[35m/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/src/util/trace.rs\u001b[0m:\u001b[35m69\u001b[0m\n\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n   1: \u001b[91mclone\u001b[0m\u001b[90m<unknown>\u001b[0m\n      at \u001b[35m<unknown source file>\u001b[0m:\u001b[35m<unknown line>\u001b[0m\n\nRun with COLORBT_SHOW_HIDDEN=1 environment variable to disable frame filtering.","event":"error occurred","host":"localhost","http_headers":"{\"user_agent\": \"goauthentik.io/healthcheck\"}","method":"GET","name":"request","path":"/health/live/","remote":"::1","scheme":"http"}
+server-1  | 2026-10-16T04:23:48.212030714Z {"filename":"packages/ak-axum/src/tracing.rs","level":"info","line_number":48,"pid":7,"spans":[{"host":"localhost","http_headers":"{\"user_agent\": \"goauthentik.io/healthcheck\"}","method":"GET","name":"request","path":"/health/live/","remote":"::1","scheme":"http"}],"target":"authentik_axum::tracing","thread_id":"ThreadId(3)","thread_name":"tokio-1","timestamp":"2026-10-16T04:23:48.203620","event":"/health/live/","runtime":"2","status":500,"host":"localhost","http_headers":"{\"user_agent\": \"goauthentik.io/healthcheck\"}","method":"GET","name":"request","path":"/health/live/","remote":"::1","scheme":"http"}
+server-1  | 2026-10-16T04:23:48.237520211Z 2026-10-16 04:23:48 [info     ] waiting to acquire database lock
+server-1  | 2026-10-16T04:23:48.293278589Z 2026-10-16 04:23:48 [info     ] Migration needs to be applied  migration=to_2025_12_group_duplicate.py
+server-1  | 2026-10-16T04:23:48.300391084Z 2026-10-16 04:23:48 [info     ] Migration finished applying    migration=to_2025_12_group_duplicate.py
+server-1  | 2026-10-16T04:23:48.308825113Z 2026-10-16 04:23:48 [info     ] applying django migrations
+server-1  | 2026-10-16T04:23:50.232789631Z {"event": "Enabled authentik enterprise", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124630.2294106}
+server-1  | 2026-10-16T04:23:50.235381536Z {"event": "Booting authentik", "level": "info", "logger": "authentik.lib.config", "timestamp": 1792124630.2326827, "version": "2026.8.3"}
+server-1  | 2026-10-16T04:23:50.238743482Z {"event": "Loaded app settings", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124630.2349496, "path": "authentik.enterprise.settings"}
+server-1  | 2026-10-16T04:23:50.340092491Z {"event": "Loaded app settings", "level": "debug", "logger": "authentik.lib.config", "timestamp": 1792124630.3336396, "path": "authentik.stages.authenticator_totp.settings"}
+server-1  | 2026-10-16T04:23:52.421939965Z {"domain_url": null, "event": "Loaded MMDB database", "file": "/geoip/GeoLite2-ASN.mmdb", "last_write": 1784024132.0, "level": "info", "logger": "authentik.events.context_processors.mmdb", "pid": 19, "schema_name": "public", "timestamp": "2026-10-16T04:23:52.419309"}
+server-1  | 2026-10-16T04:23:52.424033682Z {"domain_url": null, "event": "Loaded MMDB database", "file": "/geoip/GeoLite2-City.mmdb", "last_write": 1784024131.0, "level": "info", "logger": "authentik.events.context_processors.mmdb", "pid": 19, "schema_name": "public", "timestamp": "2026-10-16T04:23:52.423675"}
+# postgresql last 25
+postgresql-1  | 2026-10-16T04:23:06.517354442Z
+postgresql-1  | 2026-10-16T04:23:16.525063236Z 2026-10-16 04:23:16.524 UTC [333] ERROR:  relation "authentik_tasks_workerstatus" does not exist at character 22
+postgresql-1  | 2026-10-16T04:23:16.525161492Z 2026-10-16 04:23:16.524 UTC [333] STATEMENT:
+postgresql-1  | 2026-10-16T04:23:16.525179046Z 	        INSERT INTO authentik_tasks_workerstatus (id, hostname, version, last_seen)
+postgresql-1  | 2026-10-16T04:23:16.525188674Z 	            VALUES ($1, $2, $3, NOW())
+postgresql-1  | 2026-10-16T04:23:16.525196901Z 	            ON CONFLICT (id) DO UPDATE SET last_seen = NOW()
+postgresql-1  | 2026-10-16T04:23:16.525205480Z
+postgresql-1  | 2026-10-16T04:23:25.227441130Z 2026-10-16 04:23:25.227 UTC [353] ERROR:  relation "authentik_tasks_workerstatus" does not exist at character 22
+postgresql-1  | 2026-10-16T04:23:25.227479201Z 2026-10-16 04:23:25.227 UTC [353] STATEMENT:
+postgresql-1  | 2026-10-16T04:23:25.227488224Z 	        INSERT INTO authentik_tasks_workerstatus (id, hostname, version, last_seen)
+postgresql-1  | 2026-10-16T04:23:25.227496098Z 	            VALUES ($1, $2, $3, NOW())
+postgresql-1  | 2026-10-16T04:23:25.227503596Z 	            ON CONFLICT (id) DO UPDATE SET last_seen = NOW()
+postgresql-1  | 2026-10-16T04:23:25.227510844Z
+postgresql-1  | 2026-10-16T04:23:35.258929383Z 2026-10-16 04:23:35.254 UTC [354] ERROR:  relation "authentik_tasks_workerstatus" does not exist at character 22
+postgresql-1  | 2026-10-16T04:23:35.258945710Z 2026-10-16 04:23:35.254 UTC [354] STATEMENT:
+postgresql-1  | 2026-10-16T04:23:35.258952873Z 	        INSERT INTO authentik_tasks_workerstatus (id, hostname, version, last_seen)
+postgresql-1  | 2026-10-16T04:23:35.258959910Z 	            VALUES ($1, $2, $3, NOW())
+postgresql-1  | 2026-10-16T04:23:35.258966561Z 	            ON CONFLICT (id) DO UPDATE SET last_seen = NOW()
+postgresql-1  | 2026-10-16T04:23:35.258973360Z
+postgresql-1  | 2026-10-16T04:23:48.483680058Z 2026-10-16 04:23:48.483 UTC [366] ERROR:  relation "authentik_tasks_workerstatus" does not exist at character 22
+postgresql-1  | 2026-10-16T04:23:48.483717888Z 2026-10-16 04:23:48.483 UTC [366] STATEMENT:
+postgresql-1  | 2026-10-16T04:23:48.483725615Z 	        INSERT INTO authentik_tasks_workerstatus (id, hostname, version, last_seen)
+postgresql-1  | 2026-10-16T04:23:48.483732366Z 	            VALUES ($1, $2, $3, NOW())
+postgresql-1  | 2026-10-16T04:23:48.483749348Z 	            ON CONFLICT (id) DO UPDATE SET last_seen = NOW()
+postgresql-1  | 2026-10-16T04:23:48.483754543Z
+
+===== [S12] ENV-PRESENCE =====
+# presence only, no values
+AUTH_PUBLIC_HOST: SET
+POZNOTE_OIDC_CLIENT_ID: SET
+POZNOTE_OIDC_CLIENT_SECRET: SET
+# env names actually delivered into worker/server (values redacted)
+--- worker ---
+AUTHENTIK_POSTGRESQL__HOST=<delivered>
+AUTHENTIK_POSTGRESQL__NAME=<delivered>
+AUTHENTIK_POSTGRESQL__PASSWORD=<delivered>
+AUTHENTIK_POSTGRESQL__USER=<delivered>
+AUTH_PUBLIC_HOST=<delivered>
+POZNOTE_OIDC_CLIENT_ID=<delivered>
+POZNOTE_OIDC_CLIENT_SECRET=<delivered>
+--- server ---
+AUTHENTIK_POSTGRESQL__HOST=<delivered>
+AUTHENTIK_POSTGRESQL__NAME=<delivered>
+AUTHENTIK_POSTGRESQL__PASSWORD=<delivered>
+AUTHENTIK_POSTGRESQL__USER=<delivered>
+AUTH_PUBLIC_HOST=<delivered>
+POZNOTE_OIDC_CLIENT_ID=<delivered>
+POZNOTE_OIDC_CLIENT_SECRET=<delivered>
+
+===== [S13] POSTGRES =====
+# JIT flag + least-recently-analyzed tables (issue #24179 style degradation)
+using POSTGRES_USER=authentik POSTGRES_DB=authentik (from .env)
+on
+least analyzed: authentik_rbac_initialpermissions_permissions @ never
+least analyzed: authentik_providers_rac_endpoint_property_mappings @ never
+least analyzed: authentik_flows_flowtoken @ never
+# connection count
+9
+
+===== [S14] CONFIG =====
+config: OK
