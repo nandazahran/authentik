@@ -4,7 +4,11 @@
 # file stays untouched.
 #
 # NOTE: the service name "server" below must match the official file.
-# TODO: pin image versions (avoid :latest) before using this beyond a demo.
+# Authentik server/worker are NOT declared here: they come from the official
+# compose.yml, whose image tag is pinned via AUTHENTIK_TAG in .env (written by
+# setup.sh). See "Menaikkan versi Authentik" in README.md.
+# The images below are third-party demo apps without managed schema; :latest
+# is tolerable for them because an upgrade cannot break authentik migrations.
 
 services:
   # Reverse proxy: HTTPS entry point + forward-auth gatekeeper

@@ -246,6 +246,55 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
 
     > **Podman rootless (Opsi A manual):** ganti semua `sudo docker compose` dengan `$HOME/.local/share/authentik/podman-compose.sh` tanpa `sudo` dan `/opt/authentik` dengan direktori aplikasi user. Urutan validasi sama (`config --quiet`, `pull`, `up -d server worker poznote it-tools`), tapi siapkan storage rootless dulu: buat `data`/`certs`/`custom-templates` (0755, tolak symlink/non-direktori), lalu untuk tiap direktori `data`/`certs` yang baru dibuat attempt ini jalankan `podman unshare chown 1000:1000 <path-absolut>` (jangan inisialisasi path lama, jangan `chmod 777`/chown host-root rekursif). Verifikasi dengan `podman-compose.sh run --rm --no-deps --user authentik --entrypoint /bin/sh worker -ec 'test -w /data && test -r /templates && test -w /certs'`. Rootless Caddy butuh `net.ipv4.ip_unprivileged_port_start=80` (pilihan user: setiap user lokal lalu bisa bind port >= 80). Bila nilai efektif sudah <= 80, kebijakan existing cukup. Bila > 80: `sudo` tulis `/etc/sysctl.d/90-authentik-rootless-ports.conf` berisi persis `net.ipv4.ip_unprivileged_port_start = 80` (root-owned 0644), terapkan hanya key ini via `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80`; file existing identik dipakai ulang, isi berbeda = konflik, berhenti jangan timpa. Konfirmasi nilai efektif <= 80. Mapping Caddy 80/443 tetap dipertahankan agar konfigurasi ACME/redirect existing tetap bisa dipakai.
 
+#### Menaikkan versi Authentik (peningkatan tag gambar)
+
+Skrip **tidak pernah** menaikkan versi Authentik dengan sendirinya. Tag server/worker
+dipatok ke `AUTHENTIK_TAG` di `.env` yang ditulis saat instalasi, jadi re-run
+`sudo ./setup.sh` selalu memakai versi yang sama sampai Anda mengubahnya sendiri.
+Ini sengaja: file `compose.yml` resmi membawa tag default yang ikut berubah tiap
+rilis, dan naik versi bisa menerapkan migrasi Django. Migrasi yang gagal di tengah
+meninggalkan keadaan basis data setengah jalan — Authentik lalu masuk *crash-loop*
+(`InconsistentMigrationHistory`) dan tetap terlihat "Up" padahal tidak melayani.
+
+Urutan naik versi yang aman:
+
+1. Cadangkan basis data (atau biarkan skrip melakukannya pada langkah berikutnya):
+   ```
+   $ cd /opt/authentik
+   $ sudo docker compose exec -T postgresql pg_dump -U authentik -Fc authentik > authentik-manual-$(date +%Y%m%d).dump
+   ```
+2. Set tag baru di `.env` (contoh: `2026.8.3`), lalu jalankan skrip:
+   ```
+   $ sudo ./setup.sh --vps <auth-host> <tools-host> <poznote-host>
+   ```
+3. Skrip otomatis: mengambil cadangan `authentik-pre-upgrade-<stempel>.dump` sebelum
+   `docker compose pull`, lalu menunggu jendela stabilitas (~45 detik) memastikan
+   hitungan restart `authentik-server-1` tidak naik. Kalau naik, skrip **gagal** dan
+   memerintahkan Anda memeriksa log alih-alih melanjutkan.
+
+Memulihkan dari peningkatan yang gagal (basis data rusak, cadangan ada):
+
+```
+$ cd /opt/authentik
+$ sudo docker compose down
+# Wajib: kembalikan TAG ke nilai sebelum peningkatan. Setelah gagal, .env masih
+# memuat tag BARU, sehingga menjaga stack hidup akan menarik gambar baru dan
+# menjalankan lagi migrasi yang sama gagal — persis crash-loop yang baru Anda
+# pulihkan. Tag lama = nilai AUTHENTIK_TAG sebelum Anda mengubahnya pada
+# langkah 2 di atas.
+$ sudo sed -i 's/^AUTHENTIK_TAG=.*/AUTHENTIK_TAG=<tag-lama>/' .env
+$ sudo docker compose up -d postgresql
+$ sudo docker compose exec -T postgresql pg_restore -U authentik -d authentik --clean --if-exists < authentik-pre-upgrade-<stempel>.dump
+$ sudo docker compose up -d server worker poznote it-tools
+```
+
+Pulihkan **hanya** ke stack yang berjalan pada tag yang sama dengan saat cadangan
+diambil (lihat catatan di atas). Naik versi lagi hanya setelah stack stabil, dan
+lakukan dengan sengaja lewat langkah 1–3.
+
+Mengabaikan jaring pengaman secara sadar (mis. basis data masih kosong dan
+`pg_dump` memang mustahil): `FORCE_UPGRADE=1 sudo ./setup.sh ...`.
+
 #### Catatan Keamanan Instalasi
 - Hanya Caddy (port 80/443) pada Opsi A yang menjadi titik masuk; port bawaan aplikasi (9000/9443/8040) hanya terikat ke loopback.
 - Simpan `.env` (dan `cloudflared.env` pada Opsi B) dengan izin `600` dan jangan pernah dimasukkan ke git (sudah ada di `.gitignore`).

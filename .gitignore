@@ -10,3 +10,8 @@ cloudflared.env
 /data/
 /certs/
 /custom-templates/
+
+# Cadangan basis data hasil setup.sh sebelum peningkatan. Berisi isi database
+# lengkap (secret key, hash password, client secret OIDC) — jangan pernah commit.
+/authentik-pre-upgrade-*.dump
+/authentik-manual-*.dump

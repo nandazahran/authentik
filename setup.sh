@@ -610,6 +610,15 @@ add_env_key() {
   fi
 }
 
+# Pin the server/worker image tag. The upstream compose file carries its own
+# default tag, which floats on every release: re-fetching compose.yml silently
+# upgrades the deployment and can leave a half-applied migration state that no
+# longer matches the recorded history (InconsistentMigrationHistory boot loop).
+# An explicit tag in .env is only added, never overwritten, so operators keep
+# control of upgrades: bump AUTHENTIK_TAG by hand, then re-run this script.
+AUTHENTIK_TAG_PIN="${AUTHENTIK_TAG_PIN:-2026.8.4}"
+add_env_key AUTHENTIK_TAG "${AUTHENTIK_TAG_PIN}"
+
 if [ "$MODE" = vps ]; then
   OVERLAY="docker-compose.vps.yml"
   CADDY_FILE="Caddyfile"
@@ -778,10 +787,49 @@ fi
 # started manually after admin bootstrap, as printed in step 5/5.
 if [ "$RUNTIME" = docker ]; then
   docker compose config --quiet
+  # An image upgrade can apply Django migrations; if it fails midway the
+  # deployment boots into InconsistentMigrationHistory and crash-loops.
+  # Snapshot the database first so the previous state is recoverable.
+  if [ "$FIRST_RUN" = false ] && [ "${FORCE_UPGRADE:-0}" != 1 ]; then
+    if docker compose ps --status running --services 2>/dev/null | grep -qx postgresql; then
+      stamp=$(date +%Y%m%d-%H%M%S)
+      backup="${APP_DIR}/authentik-pre-upgrade-${stamp}.dump"
+      if docker compose exec -T postgresql pg_dump -U "${PG_USER:-authentik}" -Fc "${PG_DB:-authentik}" \
+        > "${backup}" 2>/dev/null && [ -s "${backup}" ]; then
+        chmod 600 "${backup}"
+        log "Database backed up to ${backup}"
+      else
+        rm -f "${backup}"
+        die "Pre-upgrade database backup failed; refusing to pull new images.
+Restore a broken upgrade from the previous dump: see README.
+Skip this safety net deliberately with FORCE_UPGRADE=1."
+      fi
+    else
+      die "Refusing to pull images: postgresql is not running, so the database cannot be backed up first.
+Start the stack (docker compose up -d) or, if the database is already broken, restore from the newest
+${APP_DIR}/authentik-pre-upgrade-*.dump. Skip this safety net deliberately with FORCE_UPGRADE=1."
+    fi
+  fi
   docker compose pull
   docker compose up -d server worker poznote it-tools
 else
   "${APP_DIR}/podman-compose.sh" config --quiet
+  # Same crash-loop risk as the Docker path: an image upgrade runs Django
+  # migrations that can fail midway. Snapshot the database first.
+  if [ "$FIRST_RUN" = false ] && [ "${FORCE_UPGRADE:-0}" != 1 ] \
+    && "${APP_DIR}/podman-compose.sh" ps --status running --services 2>/dev/null | grep -qx postgresql; then
+    stamp=$(date +%Y%m%d-%H%M%S)
+    backup="${APP_DIR}/authentik-pre-upgrade-${stamp}.dump"
+    if "${APP_DIR}/podman-compose.sh" exec -T postgresql pg_dump -U "${PG_USER:-authentik}" -Fc "${PG_DB:-authentik}" \
+      > "${backup}" 2>/dev/null && [ -s "${backup}" ]; then
+      chmod 600 "${backup}"
+      log "Database backed up to ${backup}"
+    else
+      rm -f "${backup}"
+      die "Pre-upgrade database backup failed; refusing to pull new images.
+Skip this safety net deliberately with FORCE_UPGRADE=1."
+    fi
+  fi
   "${APP_DIR}/podman-compose.sh" pull
   podman_storage_prepare
   podman_storage_check
@@ -799,6 +847,28 @@ for i in $(seq 1 60); do
   sleep 5
 done
 echo
+
+# A crash-looping server can serve a single 2xx between respawns, so health
+# alone is not proof. Require the restart count to stay flat across a window:
+# 2026.8's Rust supervisor reports "the server has exited unexpectedly" and
+# restarts the container instead of failing, which a liveness probe alone
+# hides. Failing here beats leaving a half-migrated stack running.
+if [ "$ready" = true ] && [ "$RUNTIME" = docker ] && [ "${FORCE_UPGRADE:-0}" != 1 ]; then
+  if docker inspect authentik-server-1 >/dev/null 2>&1; then
+    a=$(docker inspect -f '{{.RestartCount}}' authentik-server-1 2>/dev/null || echo 0)
+    sleep 45
+    b=$(docker inspect -f '{{.RestartCount}}' authentik-server-1 2>/dev/null || echo 0)
+    if [ "$a" != "$b" ]; then
+      die "Authentik server restarted ${a} -> ${b} during the stability window: the container is crash-looping.
+A fresh boot failure here is usually a migration/schema problem, not the network. Do NOT start
+public ingress on this. Inspect with:
+  cd ${APP_DIR} && docker compose logs --tail=100 server | grep -iE 'Traceback|inconsistent|exited unexpectedly'
+Restore from the newest ${APP_DIR}/authentik-pre-upgrade-*.dump if this followed an upgrade.
+Skip this safety net deliberately with FORCE_UPGRADE=1."
+    fi
+    log "Stability window passed (restart count ${a} unchanged)"
+  fi
+fi
 
 if [ "$ready" = true ]; then
   if [ "$RUNTIME" = podman ]; then
