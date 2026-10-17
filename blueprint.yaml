@@ -95,7 +95,11 @@ entries:
       authorization_flow: !Find [
           authentik_flows.flow,
           [slug, default-provider-authorization-implicit-consent],
-      ]
+        ]
+      invalidation_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-invalidation-flow],
+        ]
 
   - model: authentik_core.application
     id: it-tools-app
@@ -147,7 +151,11 @@ entries:
       authorization_flow: !Find [
           authentik_flows.flow,
           [slug, default-provider-authorization-implicit-consent],
-      ]
+        ]
+      invalidation_flow: !Find [
+          authentik_flows.flow,
+          [slug, default-invalidation-flow],
+        ]
 
   - model: authentik_core.application
     id: poznote-app
