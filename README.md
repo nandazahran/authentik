@@ -1,7 +1,7 @@
 <h1 align="center">Authentik</h1>
 
-[Sekilas Tentang](#sekilas-tentang) | [Instalasi](#instalasi) | [Konfigurasi](#konfigurasi) | [Otomatisasi](#otomatisasi) | [Cara Pemakaian](#cara-pemakaian) | [Pembahasan](#pembahasan) | [Referensi](#referensi)
-:---:|:---:|:---:|:---:|:---:|:---:|:---:
+[Sekilas Tentang](#sekilas-tentang) | [Instalasi](#instalasi) | [Setelah Instalasi](#setelah-instalasi) | [Konfigurasi](#konfigurasi) | [Otomatisasi](#otomatisasi) | [Cara Pemakaian](#cara-pemakaian) | [Pembahasan](#pembahasan) | [Referensi](#referensi)
+:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:
 
 <!-- TODO: isi nama kelompok dan anggota -->
 
@@ -406,11 +406,79 @@ Jangan pakai "power off" langsung di VirtualBox/panel VPS, *sudden power loss* b
 
 **Opsi A vs B, ketersediaan:** publik hanya bisa mengakses saat VM/VPS menyala, kedua opsi sama-sama down saat mesin mati. Bedanya Opsi A (VPS) biasanya memang dirancang menyala terus; Opsi B (komputer lokal) mengikuti jadwal Anda. Bila demo perlu tersedia sepanjang presentasi, nyalakan mesin sebelumnya dan verifikasi langkah di atas; untuk ketersediaan 24/7 pindah ke Opsi A.
 
+# Setelah Instalasi
+[`^ kembali ke atas ^`](#)
+
+Checklist urutan yang benar setelah stack sempat jalan. Semua langkah di bagian ini lewat UI admin Authentik, tidak ada file konfigurasi yang perlu disunting.
+
+#### 0. Hentikan ingress publik dulu (Opsi B) atau batasi firewall (Opsi A)
+
+Kredensial awal masih lemah sampai langkah 0 selesai. Pada Opsi B, jangan aktifkan `cloudflared` (`--profile tunnel up -d cloudflared`) sebelum langkah berikutnya selesai; pada Opsi A, biarkan Caddy mati sampai selesai. Kalau ingress sudah aktif sejak instalasi, selesaikan langkah ini lebih dulu di halaman penuh, bukan layar kecil.
+
+#### 1. Amankan keduanya, urut dari yang terbuka lebih dulu
+
+| Akun | Cara | Perlakuan |
+|---|---|---|
+| Authentik admin | `http://localhost:9000/if/flow/initial-setup/` (SSH port-forward) | Buat kata sandi kuat; akun **bukan** pengguna biasa, hanya untuk administrasi |
+| Poznote `admin_change_me` / `admin` | `http://localhost:8040` → UI Poznote | Ganti **username dan password**, lalu **logout dan pastikan kredensial lama ditolak** |
+
+Jangan simpan kredensial admin di `.env` atau file konfigurasi.
+
+#### 2. Pasang MFA untuk admin
+
+Authentik tidak punya jalur enroll MFA di UI admin: halaman pengguna di admin hanya menyediakan penghapusan perangkat. Enroll harus dilakukan oleh pemilik akun sendiri. Login sebagai admin (masih di halaman penuh) → ikon gear di kanan atas untuk masuk **User interface** → tab **Credentials**:
+
+- **TOTP**: pindai QR dengan aplikasi authenticator, isi kode 6 digit. Bisa direplikasi kalau secret bocor — re-enroll kalau curiga.
+- **WebAuthn/passkey**: jalankan enrollment dari perangkat yang akan dipakai. Paling aman, tapi kunci hilang = perangkat itu tidak bisa masuk.
+
+Perangkat kedua: login ulang sebagai admin dari browser/perangkat kedua dan ulangi enroll dari sana. Setiap perangkat punya passkey sendiri — tidak ada "bagikan kunci".
+
+Garda terakhir adalah recovery: buat recovery link atau email. Email butuh **System → Brands → brand aktif → Default flows → Recovery flow** sudah diset (`default-recovery-flow` bila ada). Letakkan recovery link di tempat yang bisa diakses tanpa server Anda, dan jangan di mesin yang sama yang melindunginya.
+
+Karena admin tidak bisa menambah MFA untuk pengguna lain lewat UI admin, siapkan satu akun admin cadangan: satu yang masih bisa login lokal tanpa ingress publik, untuk menghapus MFA pengguna yang terkunci (**Directory → Users** → pengguna → tab **MFA Authenticators**).
+
+#### 3. Buat pengguna dan grup uji
+
+Grup dibuat lebih dulu agar bisa langsung dipakai sebagai sasaran binding aplikasi.
+
+**Grup** (lewati bila pemakai blueprint; blueprint sudah membuat grup `demo-users`):
+
+1. **Directory → Groups → Create**.
+2. Nama `demo-users`; **jangan** aktifkan superuser (grup superuser membuat seluruh anggota jadi superuser).
+3. **Create**.
+
+**Pengguna**:
+
+1. **Directory → Users → New User**.
+2. Isi minimal **Username** (unik), pilih tipe **Internal User** — tipe **Internal** mendukung fitur penuh. **Display Name** dan **Email** opsional — email hanya berguna kalau nanti dipakai untuk recovery.
+3. Biarkan **Active** = on.
+4. **Create**.
+5. Pada halaman pengguna, buka tab **Groups → Add to existing group** → pilih `demo-users`.
+
+Susunan uji minimal: satu anggota di luar grup (ditolak), satu admin biasa, satu member `demo-users` (diizinkan), satu pengguna tanpa grup (ditolak) — jadi salah menekan peran langsung terbukti dari log.
+
+Kata sandi tidak diset saat pengguna dibuat: **Create** membuat pengguna tanpa password. Atur password lewat salah satu jalur ini:
+
+| Peran | Opsi |
+|---|---|
+| Pengguna | Login pertama kali (kalau **Enrollment flow** membutuhkannya), admin set manual, atau user sendiri lewat recovery |
+| Admin | Pilih pengguna di **Directory → Users**, klik panah kecil di sebelah nama pengguna → **Reset password**, lalu kirim kredensial awal lewat kanal terpisah |
+
+#### 4. Ikat aplikasi ke grup
+
+Di **Applications → Applications**, buka aplikasi (IT-Tools/Poznote) → **Bindings**, hubungkan ke grup `demo-users`. Kalau aplikasi tidak punya binding, **semua** pengguna bisa mengaksesnya — bukan default aman, sering tidak disadari.
+
+#### 5. Verifikasi pemakaian (smoke check)
+
+1. **Login pertama sebagai member `demo-users`** → IT-Tools menampilkan, tanpa login kedua.
+2. **Login sebagai pengguna di luar grup** → akses IT-Tools ditolak oleh binding.
+3. **Login admin → Events** memuat semua baris login berhasil/gagal itu.
+
 # Konfigurasi
 [`^ kembali ke atas ^`](#)
 
-- **Pengguna dan grup**: membuat pengguna dan grup uji <!-- TODO: langkah + screenshot -->
-- **MFA untuk admin** (TOTP atau WebAuthn) <!-- TODO -->
+- **Pengguna dan grup**: cara membuat pengguna dan grup uji sudah ada di [Setelah Instalasi](#setelah-instalasi) <!-- TODO: screenshot -->
+- **MFA untuk admin** (TOTP atau WebAuthn): enroll dilakukan pemilik akun di User interface, langkahnya ada di [Setelah Instalasi](#setelah-instalasi) "Pasang MFA untuk admin" <!-- TODO: screenshot; pembahasan MFA wajib vs opsional -->
 - **Branding dan *login flow* bawaan** <!-- TODO -->
 - **Pengaturan email** (opsional, untuk pemulihan kata sandi) <!-- TODO -->
 
@@ -488,7 +556,7 @@ Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori
 
 1. **Login dan portal pengguna**: tampilan yang dilihat pengguna biasa setelah login <!-- TODO: screenshot -->
 
-2. **Pengguna dan grup**: buat beberapa pengguna uji dengan peran berbeda, misalnya grup `demo-users` (berhak) dan satu pengguna di luar grup itu (tidak berhak). <!-- TODO: screenshot -->
+2. **Pengguna dan grup**: buat pengguna uji dengan peran berbeda, misalnya anggota grup `demo-users` (berhak) dan satu pengguna di luar grup itu (tidak berhak). Langkah pembuatan pengguna/grup, password awal, dan binding aplikasi ada di bagian [Setelah Instalasi](#setelah-instalasi). <!-- TODO: screenshot -->
 
 3. **Melindungi IT-Tools dengan forward auth**
     1. Di Authentik: **Applications → Create with Provider**. Nama `IT-Tools`.
@@ -533,7 +601,7 @@ Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori
 
     > **Pengguna blueprint**: bila stack dijalankan lewat `setup.sh` (atau overlay blueprint aktif), langkah 1–2 dan 5 sudah otomatis. Provider, scope, signing key, dan kredensial dibuat blueprint dari `.env`; cukup verifikasi di **Applications**, lalu lanjut ke langkah 3.
 
-5. **Pendaftaran MFA**: TOTP dan/atau passkey <!-- TODO -->
+5. **Pendaftaran MFA**: TOTP dan/atau passkey — enroll dilakukan pemilik akun sendiri di **User interface → Credentials**, lihat bagian [Setelah Instalasi](#setelah-instalasi) "Pasang MFA untuk admin" <!-- TODO: screenshot -->
 
 6. **Kebijakan akses**: hubungkan grup `demo-users` ke aplikasi (*Application → Policy / Group / User Bindings*), lalu coba login sebagai pengguna di luar grup dan tunjukkan bahwa akses ditolak. Kebijakan lain: pembatasan berdasarkan IP atau waktu. <!-- TODO -->
 
