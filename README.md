@@ -222,6 +222,21 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     $ sudo docker compose pull
     $ sudo docker compose up -d server worker poznote it-tools
     ```
+    > **Penting — patok tag dan cadangkan sebelum `pull`.** Jalur manual ini tidak
+    > dijaga `setup.sh`, jadi Anda harus memasang kedua penjaganya sendiri.
+    > Re-run `pull` pada instalasi yang sudah ada berarti naik versi: migrasi Django
+    > yang gagal di tengah meninggalkan basis data setengah jalan dan Authentik masuk
+    > *crash-loop* (`InconsistentMigrationHistory`) yang tetap terlihat "Up".
+    > Pada instalasi baru dua perintah di atas aman (belum ada data).
+    > 1. Pastikan `.env` memuat tag yang dipatok, mis. `AUTHENTIK_TAG=2026.8.4`
+    >    (tanpa baris ini, tag mengikuti default file resmi yang ikut berubah tiap rilis).
+    > 2. Kalau instalasi ini sudah pernah jalan: cadangkan dulu —
+    >    `sudo docker compose exec -T postgresql pg_dump -U authentik -Fc authentik > authentik-manual-$(date +%Y%m%d).dump`
+    > 3. Setelah `up -d`, pastikan server tidak crash-loop sebelum lanjut:
+    >    `sudo docker inspect authentik-server-1 --format '{{.RestartCount}}'` dua kali
+    >    berjarak ~45 detik; angka harus sama. Kalau naik, hentikan dan periksa
+    >    `docker compose logs --tail=100 server | grep -i inconsistent` (langkah
+    >    pemulihan: [Menaikkan versi Authentik](#menaikkan-versi-authentik-peningkatan-tag-gambar)).
     Jangan pernah mencetak `docker compose config` tanpa `--quiet` di mesin berisi secret asli. Konfirmasi Authentik sehat sebelum lanjut:
     ```
     $ curl -fsS http://127.0.0.1:9000/-/health/live/
