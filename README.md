@@ -27,13 +27,56 @@
 
 Authentik terdiri dari beberapa komponen yang dijalankan sebagai kontainer:
 
-- **server**: antarmuka web, API, dan *login flow*
+- **server**: antarmuka web, API, *login flow* (juga menampung *embedded outpost* untuk *forward auth*)
 - **worker**: tugas latar belakang (email, blueprint, pembersihan data)
 - **PostgreSQL**: penyimpanan pengguna, grup, *flow*, kebijakan, dan *audit log*
 - **Outpost** (opsional): kontainer *proxy* untuk melindungi aplikasi lain
 
-<!-- TODO: cek docker-compose.yml versi terbaru (apakah masih memakai Redis?) -->
-<!-- TODO: diagram arsitektur (browser -> Caddy -> server/worker -> database) -->
+Redis tidak lagi dipakai Authentik sejak rilis 2025.10; `docker-compose.yml` resmi saat ini hanya memuat `postgresql`, `server`, dan `worker`.
+
+```mermaid
+flowchart TB
+    browser["Browser pengguna"]
+
+    subgraph edge["Ingress (dua opsi)"]
+        direction LR
+        opsiA["Opsi A: VPS IP publik<br/>port 80/443 → Caddy,<br/>sertifikat ACME"]
+        opsiB["Opsi B: komputer lokal<br/>Cloudflare edge →<br/>cloudflared"]
+    end
+
+    subgraph stack["Stack Compose (satu jaringan)"]
+        direction TB
+        caddy["Caddy<br/>reverse proxy + penjaga pintu"]
+        server["authentik server :9000<br/>web / API / login flow"]
+        worker["authentik worker<br/>blueprint + tugas latar"]
+        db[("PostgreSQL<br/>pengguna, grup, flow, audit log")]
+        outpost["Embedded outpost<br/>(di dalam server)"]
+        itools["it-tools :80<br/>tanpa login sendiri"]
+        poznote["poznote :80<br/>login lewat OIDC"]
+    end
+
+    browser --> opsiA --> caddy
+    browser --> opsiB --> caddy
+
+    caddy -->|"host auth.*"| server
+    caddy -->|"1. path /outpost.goauthentik.io/*"| server
+    caddy -->|"2. forward_auth: sudah login?"| outpost
+    outpost -.-|"header X-Authentik-Username / -Groups / -Email"| caddy
+    caddy -->|"3. teruskan + header identitas"| itools
+    caddy -->|"host poznote.*"| poznote
+    poznote -.-|"discovery + JWKS ke URL publik auth.*"| caddy
+
+    worker --> db
+    server --> db
+    server <--> outpost
+```
+
+Yang perlu diperhatikan dari diagram:
+
+- **Hanya Caddy** yang menerima lalu lintas dari luar pada Opsi A (80/443). Port `9000`/`9443`/`8040` terikat *loopback* dan tidak dipublikasikan; IT-Tools tidak punya port host sama sekali.
+- **Forward auth** (IT-Tools) memakai tiga langkah berurutan di dalam satu `route` Caddy: jalur `/outpost.goauthentik.io/*` diteruskan ke Authentik, `forward_auth` bertanya apakah sesi valid, baru permintaan diteruskan beserta header identitas. Caddy + Authentik yang bekerja; aplikasinya tidak tahu apa-apa soal autentikasi.
+- **OIDC** (Poznote) bekerja sebaliknya: Authentik tidak pernah meneruskan permintaan ke Poznote. Poznote yang menghubungi Authentik sendiri lewat **URL publik** `auth.*` untuk *discovery* dan JWKS, lalu menukar kode otorisasi jadi sesi. Jadi jangan pakai issuer container-name/HTTP internal — lihat batasan Opsi B.
+- **worker** berlaku pada keduanya: ia yang menerapkan `blueprint.yaml` dan mengirim email, jadi perubahan konfigurasi langsung terlihat walau hanya `server` yang Anda buka di browser.
 
 ### Komponen Pendukung pada Demo
 
@@ -64,7 +107,50 @@ Caddy **tidak wajib** untuk menjalankan Authentik, tetapi diperlukan agar demo H
 | Yang bekerja | Caddy + Authentik | Aplikasi + Authentik |
 | Contoh pada demo | IT-Tools | Poznote |
 
-<!-- TODO: diagram alur kedua mekanisme -->
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant C as Caddy
+    participant A as Authentik (server + outpost)
+    participant T as it-tools
+    participant P as poznote
+
+    rect rgb(255,240,235)
+    Note over B,T: Forward auth — IT-Tools tidak pernah tahu soal login
+    B->>C: GET https://tools.example.com
+    C->>A: forward_auth: sesi valid?
+    alt belum login
+        A-->>B: dialihkan ke halaman login Authentik
+        B->>A: kirim kredensial (+ MFA)
+        A-->>B: sesi + cookie Authentik
+    end
+    A-->>C: 200 OK
+    C->>T: reverse_proxy + header X-Authentik-Username / -Groups
+    T-->>B: halaman IT-Tools
+    end
+
+    rect rgb(235,240,255)
+    Note over B,P: OIDC — Poznote yang aktif login ke Authentik
+    B->>P: klik "Continue with Authentik"
+    P->>A: authorize (client_id, redirect, scope openid profile email)
+    alt belum login
+        A-->>B: halaman login Authentik
+        B->>A: kirim kredensial (+ MFA)
+        A-->>B: sesi + cookie Authentik
+    end
+    A-->>P: redirect + authorization code (ke /oidc_callback.php)
+    P->>A: tukar code jadi token (client_id + client_secret)
+    A-->>P: ID token + access token (ditandatangani JWKS RSA)
+    P-->>B: sesi Poznote milik pengguna itu
+    end
+```
+
+Perbedaan praktis yang terlihat dari alur di atas:
+
+- Pada *forward auth*, setiap permintaan IT-Tools selalu dicek ke Authentik lebih dulu; sesi yang berakhir berarti permintaan berikutnya dialihkan ke halaman login. IT-Tools sendiri tidak menyimpan status login.
+- Pada OIDC, sesi Poznote terpisah dari sesi Authentik. Keduanya punya *logout* sendiri, jadi jalankan uji *logout* untuk masing-masing alur, jangan berasumsi satu *logout* mengakhiri keduanya.
+- Pintu masuk alur OIDC adalah tombol "Continue with Authentik" di halaman login Poznote. Tombol itu hanya muncul bila toggle OIDC aktif, *Issuer* terisi, dan `POZNOTE_OIDC_CLIENT_ID` terisi di environment container — ketiga syarat itu diperiksa Poznote, bukan konektivitas jaringan.
 
 
 
