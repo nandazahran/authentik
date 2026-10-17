@@ -1,6 +1,6 @@
-<h1 align="center"><img src="assets/authentik-logo.svg" alt="authentik" width="220"></h1>
+<h1 align="center">authentik<br/><img src="assets/authentik-logo.svg" width="220" alt=""></h1>
 
-<p align="center">Identity provider (IdP) open source — demo SSO + forward auth dengan Caddy, IT-Tools, dan Poznote</p>
+<p align="center">Self-hosted SSO: Authentik + Caddy + forward auth pada IT-Tools dan OIDC pada Poznote</p>
 
 [Sekilas Tentang](#sekilas-tentang) | [Instalasi](#instalasi) | [Setelah Instalasi](#setelah-instalasi) | [Konfigurasi](#konfigurasi) | [Otomatisasi](#otomatisasi) | [Penggunaan Lanjutan](#penggunaan-lanjutan) | [Pembahasan](#pembahasan) | [Referensi](#referensi)
 :---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:
@@ -35,6 +35,25 @@ Authentik terdiri dari beberapa komponen yang dijalankan sebagai kontainer:
 Redis tidak lagi dipakai Authentik sejak rilis 2025.10; `docker-compose.yml` resmi saat ini hanya memuat `postgresql`, `server`, dan `worker`.
 
 ```mermaid
+%%{init: { "theme": "base", "themeVariables": {
+  "background": "transparent",
+  "fontFamily": "system-ui, sans-serif",
+  "primaryColor": "#115e59",
+  "primaryTextColor": "#f0fdfa",
+  "primaryBorderColor": "#5eead4",
+  "lineColor": "#64748b",
+  "tertiaryColor": "#334155",
+  "tertiaryTextColor": "#f1f5f9",
+  "tertiaryBorderColor": "#94a3b8",
+  "clusterBkg": "#334155",
+  "clusterBorder": "#94a3b8",
+  "titleColor": "#0f172a",
+  "nodeBorder": "#94a3b8",
+  "nodeTextColor": "#f8fafc",
+  "edgeLabelBackground": "#334155",
+  "textColor": "#f1f5f9",
+  "mainBkg": "#334155"
+} } }%%
 flowchart TB
     browser["Browser pengguna"]
 
@@ -69,6 +88,24 @@ flowchart TB
     worker --> db
     server --> db
     server <--> outpost
+
+    classDef gateway fill:#6d28d9,stroke:#4c1d95,stroke-width:2px,color:#f5f3ff
+    classDef proxy fill:#0f766e,stroke:#115e59,stroke-width:2px,color:#f0fdfa
+    classDef idp fill:#c2410c,stroke:#9a3412,stroke-width:2px,color:#fff7ed
+    classDef store fill:#1d4ed8,stroke:#1e40af,stroke-width:2px,color:#eff6ff
+    classDef app fill:#b45309,stroke:#92400e,stroke-width:2px,color:#fffbeb
+    classDef client fill:#334155,stroke:#1e293b,stroke-width:2px,color:#f8fafc
+
+    class browser client
+    class opsiA,opsiB gateway
+    class caddy proxy
+    class server,worker,outpost idp
+    class db store
+    class itools,poznote app
+
+    linkStyle default stroke:#64748b,stroke-width:2px
+    linkStyle 4 stroke:#0d9488,stroke-width:2px,stroke-dasharray: 4 3
+    linkStyle 6 stroke:#d97706,stroke-width:2px,stroke-dasharray: 4 3
 ```
 
 Yang perlu diperhatikan dari diagram:
@@ -116,7 +153,6 @@ sequenceDiagram
     participant T as it-tools
     participant P as poznote
 
-    rect rgb(255,240,235)
     Note over B,T: Forward auth — IT-Tools tidak pernah tahu soal login
     B->>C: GET https://tools.example.com
     C->>A: forward_auth: sesi valid?
@@ -128,9 +164,7 @@ sequenceDiagram
     A-->>C: 200 OK
     C->>T: reverse_proxy + header X-Authentik-Username / -Groups
     T-->>B: halaman IT-Tools
-    end
 
-    rect rgb(235,240,255)
     Note over B,P: OIDC — Poznote yang aktif login ke Authentik
     B->>P: klik "Continue with Authentik"
     P->>A: authorize (client_id, redirect, scope openid profile email)
@@ -143,7 +177,6 @@ sequenceDiagram
     P->>A: tukar code jadi token (client_id + client_secret)
     A-->>P: ID token + access token (ditandatangani JWKS RSA)
     P-->>B: sesi Poznote milik pengguna itu
-    end
 ```
 
 Perbedaan praktis yang terlihat dari alur di atas:
