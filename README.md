@@ -1,4 +1,6 @@
-<h1 align="center">Authentik</h1>
+<h1 align="center"><img src="assets/authentik-logo.svg" alt="authentik" width="220"></h1>
+
+<p align="center">Identity provider (IdP) open source — demo SSO + forward auth dengan Caddy, IT-Tools, dan Poznote</p>
 
 [Sekilas Tentang](#sekilas-tentang) | [Instalasi](#instalasi) | [Setelah Instalasi](#setelah-instalasi) | [Konfigurasi](#konfigurasi) | [Otomatisasi](#otomatisasi) | [Penggunaan Lanjutan](#penggunaan-lanjutan) | [Pembahasan](#pembahasan) | [Referensi](#referensi)
 :---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:
