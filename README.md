@@ -211,7 +211,7 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
     ```
-    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Penggunaan Lanjutan](#penggunaan-lanjutan) nomor 4), lalu disalin ke `.env`. Lalu kunci izin file secret:
+    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint) bagian Poznote), lalu disalin ke `.env`. Lalu kunci izin file secret:
     ```
     $ sudo chmod 600 .env
     ```
@@ -242,7 +242,7 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     ```
     $ sudo docker compose up -d
     ```
-    Sertifikat ACME diterbitkan saat permintaan pertama; jika gagal, cek log Caddy: `sudo docker compose logs caddy`. Verifikasi kontainer: `sudo docker compose ps`. Lanjutkan ke bagian [Setelah Instalasi](#setelah-instalasi).
+    Sertifikat ACME diterbitkan saat permintaan pertama; jika gagal, cek log Caddy: `sudo docker compose logs caddy`. Verifikasi kontainer: `sudo docker compose ps`. Lanjutkan ke bagian [Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint) di atas (lewati bila memakai blueprint), lalu [Setelah Instalasi](#setelah-instalasi).
 
     > **Podman rootless (Opsi A manual):** ganti semua `sudo docker compose` dengan `$HOME/.local/share/authentik/podman-compose.sh` tanpa `sudo` dan `/opt/authentik` dengan direktori aplikasi user. Urutan validasi sama (`config --quiet`, `pull`, `up -d server worker poznote it-tools`), tapi siapkan storage rootless dulu: buat `data`/`certs`/`custom-templates` (0755, tolak symlink/non-direktori), lalu untuk tiap direktori `data`/`certs` yang baru dibuat attempt ini jalankan `podman unshare chown 1000:1000 <path-absolut>` (jangan inisialisasi path lama, jangan `chmod 777`/chown host-root rekursif). Verifikasi dengan `podman-compose.sh run --rm --no-deps --user authentik --entrypoint /bin/sh worker -ec 'test -w /data && test -r /templates && test -w /certs'`. Rootless Caddy butuh `net.ipv4.ip_unprivileged_port_start=80` (pilihan user: setiap user lokal lalu bisa bind port >= 80). Bila nilai efektif sudah <= 80, kebijakan existing cukup. Bila > 80: `sudo` tulis `/etc/sysctl.d/90-authentik-rootless-ports.conf` berisi persis `net.ipv4.ip_unprivileged_port_start = 80` (root-owned 0644), terapkan hanya key ini via `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80`; file existing identik dipakai ulang, isi berbeda = konflik, berhenti jangan timpa. Konfirmasi nilai efektif <= 80. Mapping Caddy 80/443 tetap dipertahankan agar konfigurasi ACME/redirect existing tetap bisa dipakai.
 
@@ -326,7 +326,7 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
     ```
-    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Penggunaan Lanjutan](#penggunaan-lanjutan) nomor 4), lalu disalin ke `.env`. `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
+    Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint) bagian Poznote), lalu disalin ke `.env`. `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
     ```
     $ sudo touch cloudflared.env && sudo chmod 600 cloudflared.env
     $ sudo chmod 600 .env
@@ -365,7 +365,7 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
     $ sudo docker compose --profile tunnel pull cloudflared
     $ sudo docker compose --profile tunnel up -d cloudflared
     ```
-    Pantau status **Healthy** dan log konektor di dashboard sebelum mengonfigurasi integrasi publik ([Penggunaan Lanjutan](#penggunaan-lanjutan)). IT-Tools tetap tertutup (*fails closed*) sampai provider-nya dibuat.
+    Pantau status **Healthy** dan log konektor di dashboard sebelum mengonfigurasi integrasi publik di [Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint). IT-Tools tetap tertutup (*fails closed*) sampai provider-nya dibuat.
 
     > **Podman rootless (Opsi B manual):** tidak ada perubahan sysctl dan tidak ada inbound web port. Ganti `sudo docker compose` dengan `$HOME/.local/share/authentik/podman-compose.sh` tanpa `sudo`, `/opt/authentik` dengan direktori aplikasi user, dan `cloudflared.env` milik user mode `600` di path user tersebut. Konektor tetap eksplisit: `podman-compose.sh --profile tunnel pull cloudflared` lalu `podman-compose.sh --profile tunnel up -d cloudflared` setelah kedua admin diganti dan redirect/certificate edge aktif.
 
@@ -405,6 +405,58 @@ Jangan pakai "power off" langsung di VirtualBox/panel VPS, *sudden power loss* b
 **Pengecualian `unless-stopped`:** jika Anda pernah menjalankan `sudo docker compose stop <layanan>` secara manual, layanan itu TIDAK akan menyala otomatis saat VM restart, status "stopped"-nya menempel. Jalankan `sudo docker compose up -d <layanan>` sekali (konektor: `--profile tunnel up -d cloudflared`) untuk menghidupkannya dan mengembalikan auto-start.
 
 **Opsi A vs B, ketersediaan:** publik hanya bisa mengakses saat VM/VPS menyala, kedua opsi sama-sama down saat mesin mati. Bedanya Opsi A (VPS) biasanya memang dirancang menyala terus; Opsi B (komputer lokal) mengikuti jadwal Anda. Bila demo perlu tersedia sepanjang presentasi, nyalakan mesin sebelumnya dan verifikasi langkah di atas; untuk ketersediaan 24/7 pindah ke Opsi A.
+
+#### Integrasi Aplikasi (jalur manual tanpa blueprint)
+
+Bagian ini hanya untuk **instalasi manual** Opsi A maupun Opsi B. Bila Anda memakai
+`setup.sh` atau overlay blueprint, keduanya **sudah otomatis** — lewati bagian ini dan
+lanjut ke [Setelah Instalasi](#setelah-instalasi).
+
+IT-Tools tetap tertutup (*fails closed*) sampai provider Proxy-nya dibuat di sini.
+
+
+#### IT-Tools: provider Proxy (forward auth)
+    1. Di Authentik: **Applications → Create with Provider**. Nama `IT-Tools`.
+    2. Pilih tipe provider **Proxy**, mode **Forward auth (single application)**, dan isi *External host* dengan `https://<TOOLS_PUBLIC_HOST>`.
+    3. Pastikan aplikasi ini ditambahkan ke **authentik Embedded Outpost**.
+    4. Buka `https://<TOOLS_PUBLIC_HOST>`: browser dialihkan ke halaman login Authentik; setelah login, IT-Tools tampil. Tanpa sesi, permintaan wajib melewati pemeriksaan login outpost dulu (keamanan *fail closed*).
+
+    <!-- TODO: screenshot; sebutkan bahwa IT-Tools sendiri tidak punya fitur login -->
+
+    > **Perbaiki Embedded Outpost setelah bootstrap**: karena akun admin pertama dibuat lewat `http://localhost:9000` (SSH loopback), Authentik dapat menganggap URL utamanya localhost. Buka **Applications → Outposts → authentik Embedded Outpost → Edit** dan set `authentik_host` ke URL browser penuh: `https://<AUTH_PUBLIC_HOST>/`. Biarkan `authentik_host_browser` kosong (URL browser sama, bukan issuer kedua). Jangan pernah menghubungkan hostname publik langsung ke `it-tools:80`. (Bila Anda memakai [blueprint](#blueprint-opsi-ketiga-opt-in-konfigurasi-sebagai-kode), langkah ini sudah otomatis, cukup verifikasi.)
+
+#### Poznote: provider OAuth2 + konfigurasi OIDC
+    1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**. Pilih *application slug* `poznote` (dipakai di URL issuer, jadi harus konsisten).
+    2. *Redirect URI* (strict): `https://<POZNOTE_PUBLIC_HOST>/oidc_callback.php`. Scope: `openid`, `profile`, `email`. **Signing Key**: pilih *key pair* yang tercantum di UI (mis. `authentik Self-signed Certificate`, dibuat otomatis saat instalasi; atau *Generate new key pair* di **Customization → Certificates**). Poznote hanya menerima JWKS `kty=RSA`; tanpa signing key Authentik memakai HS256 dan token ditolak. (Key internal `authentik Internal JWT Certificate` memang tidak muncul di daftar UI, disembunyikan dari listing.)
+
+       > Callback Poznote memakai file `oidc_callback.php` di root, bukan `/oidc/callback`. Jika provider Poznote sudah ada dari setup lama, **edit** provider itu daripada menduplikasinya.
+    3. Buka `https://<POZNOTE_PUBLIC_HOST>`; bila kredensial bawaan belum diganti pada langkah instalasi, login sebagai `admin_change_me` / `admin` dan ganti **username dan password** administrator sekarang.
+    4. Di Poznote: **Settings > Admin Tools > OIDC / SSO**, aktifkan OIDC dengan isian berikut:
+
+        | Field | Isi |
+        |---|---|
+        | Enabled | ✓ |
+        | Issuer | `https://<AUTH_PUBLIC_HOST>/application/o/poznote/` |
+        | Provider Name | `Authentik` |
+        | Scopes | `openid profile email` |
+        | Auto-create Users | ✓ |
+
+        Biarkan *Discovery URL* kosong: Poznote menurunkannya dengan menambahkan `/.well-known/openid-configuration` ke *Issuer URL*. Poznote membangun callback/logout dari nama host permintaan, jadi pastikan hostnya sesuai Redirect URI yang terdaftar. Jangan pakai issuer ber-HTTP/internal; jangan ubah login lokal Poznote menjadi SSO-only.
+
+        Pada **Opsi B**, container Poznote harus bisa menjangkau issuer dan JWKS publik tersebut lewat koneksi keluar (Cloudflare). Jangan pakai issuer container-name/HTTP internal, split DNS, atau bypass TLS.
+    5. Masukkan **Client ID** dan **Client Secret** dari provider Authentik ke `/opt/authentik/.env` (interpolasi Compose, bukan secret literal di YAML):
+       ```
+       POZNOTE_OIDC_CLIENT_ID=<client-id>
+       POZNOTE_OIDC_CLIENT_SECRET=<client-secret>
+       ```
+       Kedua variabel ini sudah di-wire ke environment container Poznote (`docker-compose.override.yml`); nilai yang Anda salin harus **persis sama** dengan yang tampil di halaman provider Authentik. Pengguna Podman: path-nya `$HOME/.local/share/authentik/.env`, recreate via `$HOME/.local/share/authentik/podman-compose.sh up -d poznote` tanpa `sudo`.
+    6. Buat ulang hanya kontainer Poznote (`down` seluruh stack tidak diperlukan):
+       ```
+       $ sudo docker compose up -d poznote
+       ```
+    7. Keluar dari Poznote. Halaman login sekarang menampilkan tombol "Continue with Authentik"; pengguna baru otomatis mendapatkan akun Poznote sendiri.
+
+    > **Pengguna blueprint**: bila stack dijalankan lewat `setup.sh` (atau overlay blueprint aktif), langkah 1–2 dan 5 sudah otomatis. Provider, scope, signing key, dan kredensial dibuat blueprint dari `.env`; cukup verifikasi di **Applications**, lalu lanjut ke langkah 3.
 
 # Setelah Instalasi
 [`^ kembali ke atas ^`](#)
@@ -540,7 +592,7 @@ Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening*
 Seluruh *stack* juga tergambar sebagai file deklaratif dari repo ini: `docker-compose.override.yml` + overlay (`docker-compose.vps.yml` atau `docker-compose.tunnel.yml`) + Caddyfile. Klon repo ke `~/authentik`, salin file-file itu **dari `~/authentik` ke `/opt/authentik`**, set `COMPOSE_FILE` sesuai mode, lalu `docker compose up -d` untuk mereproduksi instalasi di server baru.
 
 #### Blueprint (opsi ketiga, opt-in: konfigurasi sebagai kode)
-Instalasi manual di Opsi A/B **tidak memakai blueprint**. Provider dikonfigurasi lewat UI Authentik di bagian [Penggunaan Lanjutan](#penggunaan-lanjutan), dan itu jalur yang sepenuhnya valid. Blueprint adalah alternatif otomatis: [`blueprint.yaml`](blueprint.yaml) membuat grup `demo-users`, provider Proxy IT-Tools, provider OAuth2 Poznote (confidential, *redirect URI* `oidc_callback.php`, scope eksplisit, *signing key* RSA), kedua *application*-nya, dan `authentik_host` embedded outpost ke URL publik, mencegah bug "outpost menunjuk localhost" sejak awal.
+Instalasi manual di Opsi A/B **tidak memakai blueprint**. Provider dikonfigurasi lewat UI Authentik di bagian [Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint), dan itu jalur yang sepenuhnya valid. Blueprint adalah alternatif otomatis: [`blueprint.yaml`](blueprint.yaml) membuat grup `demo-users`, provider Proxy IT-Tools, provider OAuth2 Poznote (confidential, *redirect URI* `oidc_callback.php`, scope eksplisit, *signing key* RSA), kedua *application*-nya, dan `authentik_host` embedded outpost ke URL publik, mencegah bug "outpost menunjuk localhost" sejak awal.
 
 **Mengapa opt-in:** blueprint memakai `state: present`. Setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: dari folder repo hasil `git clone`, salin kedua file itu ke `/opt/authentik`, lalu tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE` dan `docker compose up -d server worker`.)
 
@@ -551,64 +603,21 @@ Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori
 # Penggunaan Lanjutan
 [`^ kembali ke atas ^`](#)
 
-Bagian ini tentang hal yang bisa **dilakukan pengguna** pada aplikasi yang sudah berjalan: melihat dashboard, keluar dari SSO, memulihkan akun, membaca audit log. Konfigurasi yang wajib dijalankan **sebelum** stack bisa dipakai (membuat provider, menyambungkan aplikasi ke grup, MFA admin) ada di bagian [Setelah Instalasi](#setelah-instalasi) dan [Instalasi](#instalasi).
+Bagian ini tentang hal yang bisa **dilakukan pengguna** pada aplikasi yang sudah berjalan: melihat dashboard, keluar dari SSO, memulihkan akun, membaca *audit log*.
 
-Nomor 3 dan 4 di bawah adalah konfigurasi **khusus untuk instalasi manual** Opsi A/B (tanpa `setup.sh`, tanpa blueprint): keduanya sudah otomatis bila Anda memakai blueprint, jadi lewati dan langsung ke nomor 5.
+Tidak ada konfigurasi baru di sini. Semua langkah wajib sebelum stack bisa dipakai sudah selesai di dua bagian sebelumnya: pembuatan provider ada di [Instalasi](#instalasi) bagian "Integrasi Aplikasi (jalur manual tanpa blueprint)" — otomatis bila memakai blueprint — sedangkan pengguna, grup, MFA admin, dan binding aplikasi ada di [Setelah Instalasi](#setelah-instalasi). Nomor-nomor di bawah hanya mengulang dan membuktikan hasil konfigurasi itu.
 
 1. **Login dan portal pengguna**: tampilan yang dilihat pengguna biasa setelah login <!-- TODO: screenshot -->
 
-2. **Pengguna dan grup** (ulah sesuai kebutuhan): langkah membuat pengguna, grup, password awal, dan mengikat aplikasi ke grup ada di [Setelah Instalasi](#setelah-instalasi) nomor 2–4. <!-- TODO: screenshot hasil audit log login berhasil vs ditolak -->
+2. **Pengguna dan grup** (ubah sesuai kebutuhan): langkah membuat pengguna, grup, password awal, dan mengikat aplikasi ke grup ada di [Setelah Instalasi](#setelah-instalasi) nomor 2–4. <!-- TODO: screenshot hasil audit log login berhasil vs ditolak -->
 
-3. **Menyiapkan provider IT-Tools (forward auth) — hanya untuk instalasi manual tanpa blueprint**
-    1. Di Authentik: **Applications → Create with Provider**. Nama `IT-Tools`.
-    2. Pilih tipe provider **Proxy**, mode **Forward auth (single application)**, dan isi *External host* dengan `https://<TOOLS_PUBLIC_HOST>`.
-    3. Pastikan aplikasi ini ditambahkan ke **authentik Embedded Outpost**.
-    4. Buka `https://<TOOLS_PUBLIC_HOST>`: browser dialihkan ke halaman login Authentik; setelah login, IT-Tools tampil. Tanpa sesi, permintaan wajib melewati pemeriksaan login outpost dulu (keamanan *fail closed*).
+3. **Pendaftaran MFA**: TOTP dan/atau passkey — enroll dilakukan pemilik akun di **User interface → Credentials**, lihat [Setelah Instalasi](#setelah-instalasi) "Pasang MFA untuk admin" <!-- TODO: screenshot -->
 
-    <!-- TODO: screenshot; sebutkan bahwa IT-Tools sendiri tidak punya fitur login -->
+4. **Kebijakan akses**: binding grup `demo-users` dibuat di [Setelah Instalasi](#setelah-instalasi) nomor 4; di sini cukup buktikan percobaan login sebagai pengguna di luar grup ditolak. Kebijakan lain: pembatasan berdasarkan IP atau waktu. <!-- TODO -->
 
-    > **Perbaiki Embedded Outpost setelah bootstrap**: karena akun admin pertama dibuat lewat `http://localhost:9000` (SSH loopback), Authentik dapat menganggap URL utamanya localhost. Buka **Applications → Outposts → authentik Embedded Outpost → Edit** dan set `authentik_host` ke URL browser penuh: `https://<AUTH_PUBLIC_HOST>/`. Biarkan `authentik_host_browser` kosong (URL browser sama, bukan issuer kedua). Jangan pernah menghubungkan hostname publik langsung ke `it-tools:80`. (Bila Anda memakai [blueprint](#blueprint-opsi-ketiga-opt-in-konfigurasi-sebagai-kode), langkah ini sudah otomatis, cukup verifikasi.)
+5. **Flow kustom**: pendaftaran atau pemulihan kata sandi <!-- TODO -->
 
-4. **Menyiapkan login Poznote (OIDC) — hanya untuk instalasi manual tanpa blueprint**
-    1. Di Authentik: **Applications → Create with Provider**. Nama `Poznote`, tipe provider **OAuth2/OpenID**, *client type* **Confidential**. Pilih *application slug* `poznote` (dipakai di URL issuer, jadi harus konsisten).
-    2. *Redirect URI* (strict): `https://<POZNOTE_PUBLIC_HOST>/oidc_callback.php`. Scope: `openid`, `profile`, `email`. **Signing Key**: pilih *key pair* yang tercantum di UI (mis. `authentik Self-signed Certificate`, dibuat otomatis saat instalasi; atau *Generate new key pair* di **Customization → Certificates**). Poznote hanya menerima JWKS `kty=RSA`; tanpa signing key Authentik memakai HS256 dan token ditolak. (Key internal `authentik Internal JWT Certificate` memang tidak muncul di daftar UI, disembunyikan dari listing.)
-
-       > Callback Poznote memakai file `oidc_callback.php` di root, bukan `/oidc/callback`. Jika provider Poznote sudah ada dari setup lama, **edit** provider itu daripada menduplikasinya.
-    3. Buka `https://<POZNOTE_PUBLIC_HOST>`; bila kredensial bawaan belum diganti pada langkah instalasi, login sebagai `admin_change_me` / `admin` dan ganti **username dan password** administrator sekarang.
-    4. Di Poznote: **Settings > Admin Tools > OIDC / SSO**, aktifkan OIDC dengan isian berikut:
-
-        | Field | Isi |
-        |---|---|
-        | Enabled | ✓ |
-        | Issuer | `https://<AUTH_PUBLIC_HOST>/application/o/poznote/` |
-        | Provider Name | `Authentik` |
-        | Scopes | `openid profile email` |
-        | Auto-create Users | ✓ |
-
-        Biarkan *Discovery URL* kosong: Poznote menurunkannya dengan menambahkan `/.well-known/openid-configuration` ke *Issuer URL*. Poznote membangun callback/logout dari nama host permintaan, jadi pastikan hostnya sesuai Redirect URI yang terdaftar. Jangan pakai issuer ber-HTTP/internal; jangan ubah login lokal Poznote menjadi SSO-only.
-
-        Pada **Opsi B**, container Poznote harus bisa menjangkau issuer dan JWKS publik tersebut lewat koneksi keluar (Cloudflare). Jangan pakai issuer container-name/HTTP internal, split DNS, atau bypass TLS.
-    5. Masukkan **Client ID** dan **Client Secret** dari provider Authentik ke `/opt/authentik/.env` (interpolasi Compose, bukan secret literal di YAML):
-       ```
-       POZNOTE_OIDC_CLIENT_ID=<client-id>
-       POZNOTE_OIDC_CLIENT_SECRET=<client-secret>
-       ```
-       Kedua variabel ini sudah di-wire ke environment container Poznote (`docker-compose.override.yml`); nilai yang Anda salin harus **persis sama** dengan yang tampil di halaman provider Authentik. Pengguna Podman: path-nya `$HOME/.local/share/authentik/.env`, recreate via `$HOME/.local/share/authentik/podman-compose.sh up -d poznote` tanpa `sudo`.
-    6. Buat ulang hanya kontainer Poznote (`down` seluruh stack tidak diperlukan):
-       ```
-       $ sudo docker compose up -d poznote
-       ```
-    7. Keluar dari Poznote. Halaman login sekarang menampilkan tombol "Continue with Authentik"; pengguna baru otomatis mendapatkan akun Poznote sendiri.
-
-    > **Pengguna blueprint**: bila stack dijalankan lewat `setup.sh` (atau overlay blueprint aktif), langkah 1–2 dan 5 sudah otomatis. Provider, scope, signing key, dan kredensial dibuat blueprint dari `.env`; cukup verifikasi di **Applications**, lalu lanjut ke langkah 3.
-
-5. **Pendaftaran MFA**: TOTP dan/atau passkey — enroll dilakukan pemilik akun di **User interface → Credentials**, lihat [Setelah Instalasi](#setelah-instalasi) "Pasang MFA untuk admin" <!-- TODO: screenshot -->
-
-6. **Kebijakan akses**: binding grup `demo-users` dibuat di [Setelah Instalasi](#setelah-instalasi) nomor 4; di sini cukup buktikan percobaan login sebagai pengguna di luar grup ditolak. Kebijakan lain: pembatasan berdasarkan IP atau waktu. <!-- TODO -->
-
-7. **Flow kustom**: pendaftaran atau pemulihan kata sandi <!-- TODO -->
-
-8. **Audit log (Events)**: login berhasil, percobaan gagal, dan penolakan kebijakan <!-- TODO -->
+6. **Audit log (Events)**: login berhasil, percobaan gagal, dan penolakan kebijakan <!-- TODO -->
 
 #### Alur Demo
 1. Buka `https://<TOOLS_PUBLIC_HOST>` → dialihkan ke login Authentik.
