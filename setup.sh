@@ -59,7 +59,7 @@ run_priv() {
 
 # Rootless Podman invocations: never inherit a rootful/remote engine config.
 podman_user() {
-  env -u CONTAINER_HOST -u CONTAINER_CONNECTION command podman "$@"
+  env -u CONTAINER_HOST -u CONTAINER_CONNECTION podman "$@"
 }
 
 print_usage() {
@@ -443,7 +443,11 @@ else
     command -v "$bin" >/dev/null 2>&1 \
       || die "Missing prerequisite $bin after package install: install it as administrator, then rerun."
   done
-  podman_ver=$(podman_user --version 2>&1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+  # Capture first: `podman --version | grep | head -1` under set -euo pipefail
+  # dies silently (grep no-match rc=1, or SIGPIPE rc=141 from head).
+  podman_out=$(podman_user --version 2>&1) || die "podman --version failed: ${podman_out:-<empty>}"
+  podman_ver=$(printf '%s\n' "$podman_out" | grep -oE -m1 '[0-9]+\.[0-9]+(\.[0-9]+)?') || true
+  [ -n "$podman_ver" ] || die "Could not parse a Podman version from: $podman_out"
   lowest=$(printf '%s\n4.3.0\n' "$podman_ver" | sort -V | head -1)
   [ "$lowest" = "4.3.0" ] \
     || die "Podman branch needs Podman >= 4.3.0 (found: ${podman_ver:-unknown})."
