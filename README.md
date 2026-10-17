@@ -210,7 +210,9 @@ Cukup untuk VPS dengan IP publik dan inbound 80/443 terbuka. Caddy mengambil ser
     AUTH_PUBLIC_HOST=auth.example.com
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
+    AUTHENTIK_TAG=2026.8.4
     ```
+    `AUTHENTIK_TAG` wajib: tanpa baris ini tag mengikuti default file `compose.yml` resmi yang ikut berubah tiap rilis, sehingga `docker compose pull` bisa naik versi tanpa disadari. Naik versi hanya dengan sengaja — lihat [Menaikkan versi Authentik](#menaikkan-versi-authentik-peningkatan-tag-gambar).
     Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint) bagian Poznote), lalu disalin ke `.env`. Lalu kunci izin file secret:
     ```
     $ sudo chmod 600 .env
@@ -278,7 +280,7 @@ Urutan naik versi yang aman:
    $ cd /opt/authentik
    $ sudo docker compose exec -T postgresql pg_dump -U authentik -Fc authentik > authentik-manual-$(date +%Y%m%d).dump
    ```
-2. Set tag baru di `.env` (contoh: `2026.8.3`), lalu jalankan skrip:
+2. Set tag baru di `.env` (contoh: `2026.8.4`), lalu jalankan skrip:
    ```
    $ sudo ./setup.sh --vps <auth-host> <tools-host> <poznote-host>
    ```
@@ -340,7 +342,9 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
     AUTH_PUBLIC_HOST=auth.example.com
     TOOLS_PUBLIC_HOST=tools.example.com
     POZNOTE_PUBLIC_HOST=poznote.example.com
+    AUTHENTIK_TAG=2026.8.4
     ```
+    `AUTHENTIK_TAG` wajib: tanpa baris ini tag mengikuti default file `compose.yml` resmi yang ikut berubah tiap rilis, sehingga `docker compose pull` bisa naik versi tanpa disadari. Naik versi hanya dengan sengaja — lihat [Menaikkan versi Authentik](#menaikkan-versi-authentik-peningkatan-tag-gambar).
     Kredensial OIDC Poznote (`POZNOTE_OIDC_CLIENT_ID`/`SECRET`) diisi setelah provider OAuth2 dibuat di Authentik ([Integrasi Aplikasi](#integrasi-aplikasi-jalur-manual-tanpa-blueprint) bagian Poznote), lalu disalin ke `.env`. `COMPOSE_FILE` membuat overlay tunnel selalu aktif untuk setiap perintah `docker compose` dari direktori ini; jangan simpan `COMPOSE_PROFILES=tunnel` (konektor sengaja tidak ikut `up -d` biasa). Buat juga file token konektor (kosong dulu) milik root:
     ```
     $ sudo touch cloudflared.env && sudo chmod 600 cloudflared.env
@@ -645,10 +649,11 @@ Tidak perlu entri *hosts file* di komputer browser dan tidak ada peringatan sert
 
 #### Pemecahan Masalah (dari pengalaman deploy nyata)
 
-Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment Opsi B:
+Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment:
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
+| `docker stats` menunjukkan CPU **server dan worker ~100% terus-menerus**, padahal tidak ada trafik; kontainer tetap "Up", `docker inspect authentik-server-1` → `OOMKilled=false`, `ExitCode=0`, dan `RestartCount` terus naik | **Bukan** beban kerja, bukan OOM, bukan `/dev/shm`, bukan outpost, bukan blueprint. Authentik *crash-loop*: migrasi Django yang gagal membuat gunicorn gagal memuat config (`Failed to read config file: ./lifecycle/gunicorn.conf.py`), keluar senyap, lalu supervisor Rust 2026.8 menyatakan `the server has exited unexpectedly` dan memulai ulang. Setiap siklus membakar CPU bootstrap. Pemicu umum: `docker compose pull` menaikkan versi tanpa disadari sehingga riwayat migrasi tercatat tidak cocok lagi (`InconsistentMigrationHistory`) | **Jangan mulai ingress publik.** Konfirmasi dengan: `sudo docker compose logs --tail=200 server` lalu cari baris `inconsistent` (grep boleh terpisah dari pipe, mis. `grep -i inconsistent`). Kalau ini menyusul peningkatan versi, pulihkan dari cadangan pada tag yang dipatok — lihat [Menaikkan versi Authentik](#menaikkan-versi-authentik-peningkatan-tag-gambar), **termasuk reset `AUTHENTIK_TAG` sebelum restore**. Kalau instalasi baru tanpa data, hapus direktori deploy dan pasang ulang. `setup.sh` versi sekarang mencegahnya: tag dipatok, basis data dicadangkan sebelum `pull`, dan jendela stabilitas 45 detik menggagalkan deploy yang restart-nya naik |
 | Login IT-Tools dialihkan ke `localhost` → `ERR_CONNECTION_REFUSED` | Embedded Outpost mengira host Authentik = `http://localhost:9000` karena bootstrap lewat SSH loopback | **Applications → Outposts → authentik Embedded Outpost → Edit**: set `authentik_host` ke `https://<AUTH_PUBLIC_HOST>/` (URL penuh, trailing slash). Jangan set `authentik_host_browser`. Lihat blok "Perbaiki Embedded Outpost" di atas, ini WAJIB dicek setelah bootstrap lokal, jangan dianggap opsional |
 | Setelah login, IT-Tools menampilkan halaman "Not Found / Powered by authentik" | *Kemungkinan* (belum terverifikasi dari log): cookie sesi proxy dari percobaan saat outpost masih salah, atau *External host* provider tidak sama persis dengan hostname publik (mis. `tools.` vs `ittools.`) | Kumpulkan bukti dulu: URL lengkap di address bar browser + `sudo docker compose logs caddy server --tail=50`, dan pastikan route Cloudflare untuk host ini menunjuk `caddy:80` (bukan `server:9000`). Kandidat solusi: jendela *incognito* (cookie lama), samakan *External host* provider dengan `https://<TOOLS_PUBLIC_HOST>` persis, pastikan ketiganya identik: hostname route Cloudflare, `TOOLS_PUBLIC_HOST` di `.env`, *External host* |
 | IT-Tools `502 Bad Gateway` | Kontainer `it-tools` tidak berjalan (versi `setup.sh` lama tidak memulainya; `--profile tunnel up -d cloudflared` hanya menarik dependensinya, caddy) | `sudo docker compose up -d it-tools` (atau `up -d` penuh). `setup.sh` versi baru sudah ikut menjalankannya saat bootstrap |

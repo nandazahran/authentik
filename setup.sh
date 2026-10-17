@@ -614,14 +614,25 @@ add_env_key() {
   fi
 }
 
-# Pin the server/worker image tag. The upstream compose file carries its own
-# default tag, which floats on every release: re-fetching compose.yml silently
-# upgrades the deployment and can leave a half-applied migration state that no
-# longer matches the recorded history (InconsistentMigrationHistory boot loop).
-# An explicit tag in .env is only added, never overwritten, so operators keep
-# control of upgrades: bump AUTHENTIK_TAG by hand, then re-run this script.
+# Resolve a variable the same way compose does for this deployment. The guard
+# below must match the operator's real database: ${APP_DIR}/.env may set
+# PG_USER/PG_DB to custom values, and silently dumping a different database
+# would still produce a non-empty file that passes a "did it work?" check.
+# Operators' exported values still win, matching add_env_key's precedence.
+env_file_value() {
+  key="$1"
+  grep -E "^${key}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' \r'
+}
+
 AUTHENTIK_TAG_PIN="${AUTHENTIK_TAG_PIN:-2026.8.4}"
+export AUTHENTIK_TAG_PIN
 add_env_key AUTHENTIK_TAG "${AUTHENTIK_TAG_PIN}"
+
+PG_USER="${PG_USER:-$(env_file_value PG_USER)}"
+PG_DB="${PG_DB:-$(env_file_value PG_DB)}"
+PG_USER="${PG_USER:-authentik}"
+PG_DB="${PG_DB:-authentik}"
+export PG_USER PG_DB
 
 if [ "$MODE" = vps ]; then
   OVERLAY="docker-compose.vps.yml"
@@ -798,16 +809,29 @@ if [ "$RUNTIME" = docker ]; then
     if docker compose ps --status running --services 2>/dev/null | grep -qx postgresql; then
       stamp=$(date +%Y%m%d-%H%M%S)
       backup="${APP_DIR}/authentik-pre-upgrade-${stamp}.dump"
-      if docker compose exec -T postgresql pg_dump -U "${PG_USER:-authentik}" -Fc "${PG_DB:-authentik}" \
-        > "${backup}" 2>/dev/null && [ -s "${backup}" ]; then
-        chmod 600 "${backup}"
-        log "Database backed up to ${backup}"
-      else
+      # --schema-only dump first proves we can read the RIGHT database: a dump of
+      # the wrong DB still produces a non-empty file, which would silently pass a
+      # naive "-s" check and leave the operator with a useless backup.
+      if ! docker compose exec -T postgresql pg_dump -U "${PG_USER}" -Fc "${PG_DB}" \
+        > "${backup}" 2>/dev/null || [ ! -s "${backup}" ]; then
         rm -f "${backup}"
-        die "Pre-upgrade database backup failed; refusing to pull new images.
+        die "Pre-upgrade database backup failed (PG_USER=${PG_USER} PG_DB=${PG_DB}); refusing to pull new images.
 Restore a broken upgrade from the previous dump: see README.
 Skip this safety net deliberately with FORCE_UPGRADE=1."
       fi
+      # The deployment must contain authentik's own tables; anything else means
+      # the credentials pointed somewhere else and the dump is worthless.
+      if ! docker compose exec -T postgresql psql -U "${PG_USER}" -d "${PG_DB}" -tAc \
+        "select 1 from information_schema.tables where table_name='django_migrations'" \
+        2>/dev/null | grep -q 1; then
+        rm -f "${backup}"
+        die "Backup of PG_DB=${PG_DB} contains no authentik tables (django_migrations absent):
+this is not the deployment database, so the snapshot is worthless. Check PG_USER/PG_DB in
+${APP_DIR}/.env. Refusing to pull new images.
+Skip this safety net deliberately with FORCE_UPGRADE=1."
+      fi
+      chmod 600 "${backup}"
+      log "Database backed up to ${backup} (PG_USER=${PG_USER} PG_DB=${PG_DB})"
     else
       die "Refusing to pull images: postgresql is not running, so the database cannot be backed up first.
 Start the stack (docker compose up -d) or, if the database is already broken, restore from the newest
@@ -824,15 +848,25 @@ else
     && "${APP_DIR}/podman-compose.sh" ps --status running --services 2>/dev/null | grep -qx postgresql; then
     stamp=$(date +%Y%m%d-%H%M%S)
     backup="${APP_DIR}/authentik-pre-upgrade-${stamp}.dump"
-    if "${APP_DIR}/podman-compose.sh" exec -T postgresql pg_dump -U "${PG_USER:-authentik}" -Fc "${PG_DB:-authentik}" \
-      > "${backup}" 2>/dev/null && [ -s "${backup}" ]; then
-      chmod 600 "${backup}"
-      log "Database backed up to ${backup}"
-    else
+    # Same two-stage check as the Docker path: non-empty, and actually the
+    # authentik database (a dump of the wrong DB also looks non-empty).
+    if ! "${APP_DIR}/podman-compose.sh" exec -T postgresql pg_dump -U "${PG_USER}" -Fc "${PG_DB}" \
+      > "${backup}" 2>/dev/null || [ ! -s "${backup}" ]; then
       rm -f "${backup}"
-      die "Pre-upgrade database backup failed; refusing to pull new images.
+      die "Pre-upgrade database backup failed (PG_USER=${PG_USER} PG_DB=${PG_DB}); refusing to pull new images.
 Skip this safety net deliberately with FORCE_UPGRADE=1."
     fi
+    if ! "${APP_DIR}/podman-compose.sh" exec -T postgresql psql -U "${PG_USER}" -d "${PG_DB}" -tAc \
+      "select 1 from information_schema.tables where table_name='django_migrations'" \
+      2>/dev/null | grep -q 1; then
+      rm -f "${backup}"
+      die "Backup of PG_DB=${PG_DB} contains no authentik tables (django_migrations absent):
+this is not the deployment database, so the snapshot is worthless. Check PG_USER/PG_DB in
+${APP_DIR}/.env. Refusing to pull new images.
+Skip this safety net deliberately with FORCE_UPGRADE=1."
+    fi
+    chmod 600 "${backup}"
+    log "Database backed up to ${backup} (PG_USER=${PG_USER} PG_DB=${PG_DB})"
   fi
   "${APP_DIR}/podman-compose.sh" pull
   podman_storage_prepare
