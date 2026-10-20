@@ -15,3 +15,8 @@ cloudflared.env
 # lengkap (secret key, hash password, client secret OIDC) — jangan pernah commit.
 /authentik-pre-upgrade-*.dump
 /authentik-manual-*.dump
+
+.projectmem/events.jsonl
+.projectmem/watch.pid
+.projectmem/watch.log
+.projectmem/structure.json
