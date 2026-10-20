@@ -433,6 +433,42 @@ lakukan dengan sengaja lewat langkah 1–3.
 Mengabaikan jaring pengaman secara sadar (mis. basis data masih kosong dan
 `pg_dump` memang mustahil): `FORCE_UPGRADE=1 sudo ./setup.sh ...`.
 
+#### Mengganti nama host publik (domain)
+
+Tidak perlu instalasi ulang atau membuat ulang VM: data ada di volume, dan hostname
+hanya hidup di tiga tempat (lihat aturan di [Pemecahan Masalah](#pemecahan-masalah-dari-pengalaman-deploy-nyata)).
+Secret di `.env` (`PG_PASS`, `AUTHENTIK_SECRET_KEY`, `POZNOTE_OIDC_*`) dan
+`AUTHENTIK_TAG` tidak disentuh.
+
+1. Siapkan nama host baru lebih dulu, biarkan yang lama tetap aktif.
+   **Opsi B**: tambah tiga *public hostname* di tunnel yang sama, *Service type* HTTP
+   `caddy:80`, *HTTP Host Header override* kosong, plus *Single Redirect*
+   `http://<host-baru>/*` ke `https://<host-baru>/${1}` (301). Tunggu *edge certificate* aktif.
+   **Opsi A**: buat record `A`/`AAAA` baru, tunggu `dig +short <host>`.
+2. Ubah tiga baris di `.env`: `AUTH_PUBLIC_HOST`, `TOOLS_PUBLIC_HOST`, `POZNOTE_PUBLIC_HOST`.
+3. Terapkan ulang. `restart` tidak cukup (env lama menempel), dan `up -d` saja **tidak**
+   menerapkan ulang blueprint — hash blueprint hanya mencakup isi file, bukan nilai `!Env`:
+   ```
+   $ cd /opt/authentik
+   $ sudo docker compose up -d
+   $ sudo docker compose exec server ak apply_blueprint /blueprints/custom/demo.yaml
+   ```
+   Tanpa blueprint (konfigurasi lewat UI): ubah manual *External host* provider IT-Tools,
+   *Redirect URI* Poznote, dan `authentik_host` embedded outpost.
+4. Poznote: **Settings > Admin Tools > OIDC / SSO** → *Issuer* `https://<auth-baru>/application/o/poznote/`.
+   *Discovery URL* tetap kosong. Nilai ini tersimpan di volume `poznote_data`, bukan di `.env`.
+5. Verifikasi sebelum menghapus nama lama: `curl -fsS https://<auth-baru>/-/health/live/`,
+   lalu login Authentik, IT-Tools, dan Poznote. Cek juga status blueprint
+   (`select name,status from authentik_blueprints_blueprintinstance;` → `successful`;
+   `error` = seluruh blueprint di-*rollback*, tidak ada yang berubah).
+   Baru setelah itu hapus hostname lama di tunnel/DNS.
+
+Semua pengguna harus login ulang (cookie terikat nama host). **System → Brands → default → Domain**
+hanya perlu diubah bila field itu pernah diisi eksplisit; biarkan `authentik-default` bila tidak.
+
+> **Podman rootless:** sama, tanpa `sudo`, dengan `./podman-compose.sh` menggantikan
+> `sudo docker compose` dan `~/.local/share/authentik` menggantikan `/opt/authentik`.
+
 #### Catatan Keamanan Instalasi
 - Hanya Caddy (port 80/443) pada Opsi A yang menjadi titik masuk; port bawaan aplikasi (9000/9443/8040) hanya terikat ke loopback.
 - Simpan `.env` (dan `cloudflared.env` pada Opsi B) dengan izin `600` dan jangan pernah dimasukkan ke git (sudah ada di `.gitignore`).
@@ -797,6 +833,7 @@ Gejala, penyebab, dan solusi yang benar-benar terjadi saat deployment:
 | Podman VPS: Caddy gagal bind 80/443 | `net.ipv4.ip_unprivileged_port_start` masih > 80 atau file sysctl konflik | Cek `sysctl -n net.ipv4.ip_unprivileged_port_start` (wajib <= 80). File konflik di `/etc/sysctl.d/90-authentik-rootless-ports.conf` = selesaikan eksplisit, jangan timpa. Kebijakan host lain yang menimpa nilai = blocker eksplisit, jangan ganti runtime atau tulis ulang sysctl lain |
 | Podman: `Rootless storage check failed` / 500 saat upload branding | Kepemilikan map `data`/`certs` salah untuk UID 1000 kontainer. Persiapan awal lengkapnya ada di catatan "Podman rootless (Opsi A manual)" pada langkah instalasi Opsi A | Jangan `chmod 777`/chown host-root rekursif dan jangan auto-repair data non-kosong. Perbaiki kepemilikan map eksplisit (`podman unshare chown 1000:1000` hanya untuk direktori fresh), pastikan `custom-templates`/blueprint readable |
 | Podman: `Runtime mismatch` / `refusing to adopt` | Target berisi marker engine lain, marker asing, atau config tanpa marker | Migrasi data eksplisit; jangan mengadopsi storage user lain/rootful/Docker. `COMPOSE_FILE` Docker berisi overlay Podman (atau sebaliknya) = perbaiki daftar file sesuai runtime |
+| `*_PUBLIC_HOST` diubah tapi provider masih memakai hostname lama | `up -d`/`restart` hanya mengganti env; blueprint tidak diterapkan ulang karena hash-nya hanya mencakup isi file, bukan nilai `!Env` | `docker compose exec server ak apply_blueprint /blueprints/custom/demo.yaml` (Podman: `./podman-compose.sh exec server ak ...`), lalu pastikan status instance `successful`. Lihat [Mengganti nama host publik](#mengganti-nama-host-publik-domain) |
 
 Aturan umum yang berulang: **hostname harus identik di tiga tempat**, route Cloudflare, `*_PUBLIC_HOST` di `.env`, dan pengaturan provider Authentik. Beda satu huruf = aliran login putus di tengah.
 
