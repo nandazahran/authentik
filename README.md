@@ -83,37 +83,31 @@ Caddy mengambil sertifikat ACME otomatis pada Opsi A, atau menerima HTTP interna
 
 ```mermaid
 sequenceDiagram
-    autonumber
+    accTitle: Alur forward auth dan OIDC
+    accDescr: Forward auth memeriksa sesi ke Authentik pada setiap permintaan ke IT-Tools. OIDC membuat Poznote memulai permintaan authorize sekali, menukar authorization code menjadi ID token, lalu membuat sesinya sendiri.
+
     participant B as Browser
     participant C as Caddy
-    participant A as Authentik (server + outpost)
+    participant A as Authentik
     participant T as it-tools
     participant P as poznote
 
-    Note over B,T: Forward auth — IT-Tools tidak pernah tahu soal login
-    B->>C: GET https://tools.example.com
-    C->>A: forward_auth: sesi valid?
-    alt belum login
-        A-->>B: dialihkan ke halaman login Authentik
-        B->>A: kirim kredensial (+ MFA)
-        A-->>B: sesi + cookie Authentik
-    end
-    A-->>C: 200 OK
-    C->>T: reverse_proxy + header X-Authentik-Username / -Groups
+    Note over B,A: Belum login → diarahkan ke halaman login Authentik
+
+    Note over B,A: Forward auth — dicek tiap permintaan
+    B->>C: GET tools.*
+    C->>A: sesi valid?
+    A-->>C: 200 + header identitas
+    C->>T: reverse_proxy
     T-->>B: halaman IT-Tools
 
-    Note over B,P: OIDC — Poznote yang aktif login ke Authentik
-    B->>P: klik "Continue with Authentik"
-    P->>A: authorize (client_id, redirect, scope openid profile email)
-    alt belum login
-        A-->>B: halaman login Authentik
-        B->>A: kirim kredensial (+ MFA)
-        A-->>B: sesi + cookie Authentik
-    end
-    A-->>P: redirect + authorization code (ke /oidc_callback.php)
-    P->>A: tukar code jadi token (client_id + client_secret)
-    A-->>P: ID token + access token (ditandatangani JWKS RSA)
-    P-->>B: sesi Poznote milik pengguna itu
+    Note over B,A: OIDC — Poznote yang memulai
+    B->>P: klik Continue with Authentik
+    P->>A: authorize
+    A-->>P: authorization code
+    P->>A: tukar code + client_secret
+    A-->>P: ID token + access token (JWKS RSA)
+    P-->>B: sesi Poznote
 ```
 
 Perbedaan praktis:
