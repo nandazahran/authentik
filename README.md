@@ -32,8 +32,6 @@ Authentik berjalan sebagai beberapa kontainer:
 - **PostgreSQL**: pengguna, grup, *flow*, kebijakan, dan *audit log*
 - **Outpost** (opsional): kontainer *proxy* untuk melindungi aplikasi lain
 
-Redis tidak lagi dipakai sejak rilis 2025.10; `docker-compose.yml` resmi saat ini hanya memuat `postgresql`, `server`, dan `worker`.
-
 ```mermaid
 flowchart TB
     accTitle: Arsitektur demo Authentik
@@ -187,7 +185,7 @@ UID 0 di dalam worker/kontainer adalah hasil pemetaan namespace, bukan root host
     $ cd ~/authentik
     $ ls
     ```
-    `git clone` menjaga bit *executable* `setup.sh`, sehingga tidak muncul `Permission denied` seperti saat file diunduh satu per satu. Sudah pernah klon? Jangan klon ulang — cukup `cd ~/authentik && git pull --ff-only`. Isi folder kerja: `README.md`, `setup.sh`, `Caddyfile`/`Caddyfile.tunnel`, `docker-compose.*.yml`, `blueprint.yaml`.
+    `git clone` menjaga bit *executable* `setup.sh` (lihat baris `Permission denied` di [Pemecahan Masalah](#pemecahan-masalah-dari-pengalaman-deploy-nyata)). Sudah pernah klon? Jangan klon ulang — cukup `cd ~/authentik && git pull --ff-only`. Isi folder kerja: `README.md`, `setup.sh`, `Caddyfile`/`Caddyfile.tunnel`, `docker-compose.*.yml`, `blueprint.yaml`.
 
 #### Alternatif: Podman rootless (tanpa `sudo` deployment)
 
@@ -376,7 +374,7 @@ Untuk komputer lokal **tanpa IP publik dan tanpa port forwarding di router**: `c
 
 ### Menaikkan versi Authentik (peningkatan tag gambar)
 
-Skrip **tidak pernah** menaikkan versi Authentik sendiri. Tag server/worker dipatok ke `AUTHENTIK_TAG` di `.env`, jadi re-run `sudo ./setup.sh` selalu memakai versi yang sama sampai Anda mengubahnya. Ini sengaja: file `compose.yml` resmi membawa tag default yang ikut berubah tiap rilis, dan naik versi bisa menerapkan migrasi Django. Migrasi yang gagal di tengah meninggalkan basis data setengah jalan — Authentik masuk *crash-loop* (`InconsistentMigrationHistory`) dan tetap terlihat "Up" padahal tidak melayani.
+Tag server/worker dipatok ke `AUTHENTIK_TAG` di `.env` (lihat [Siapkan `.env`](#siapkan-env)), jadi re-run `sudo ./setup.sh` memakai versi yang sama sampai Anda mengubahnya sendiri. Naik versi bisa menerapkan migrasi Django: migrasi yang gagal di tengah meninggalkan basis data setengah jalan — Authentik masuk *crash-loop* (`InconsistentMigrationHistory`) dan tetap terlihat "Up" padahal tidak melayani.
 
 Urutan naik versi yang aman:
 
@@ -654,7 +652,7 @@ Baris Podman dijalankan sebagai user deployment biasa (SSH login normal, **tanpa
 - `--vps` / `--tunnel`: pilih mode hosting sesuai bagian Instalasi; tiga argumen host adalah FQDN publik Anda.
 - `--harden`: mengatur `ufw` (SSH + inbound 80/443 hanya untuk `--vps`), `unattended-upgrades`, dan `fail2ban`. Di Ubuntu, `fail2ban` ada di `universe` (aktif default); bila sources dikustom dan `universe` tidak aktif: `sudo add-apt-repository universe`.
 
-Deteksi OS menerima `debian` maupun `ubuntu`, dan repo Docker dipilih otomatis (`linux/${ID}` + suite `${UBUNTU_CODENAME:-$VERSION_CODENAME}`), persis instruksi resmi Docker: Ubuntu 22.04 (jammy), 24.04 (noble), 26.04 (resolute), serta Debian 12 (bookworm)/13 (trixie).
+Deteksi OS menerima `debian` maupun `ubuntu`; Debian 12 (bookworm)/13 (trixie) didukung tanpa perubahan script.
 
 Script melakukan: pengecekan awal, instalasi Docker dari repo resmi, *hardening* dasar (opsional), lalu **menjalankan seluruh backend privat** (`server`, `worker`, `poznote`, `it-tools`) dan menunggu sampai Authentik sehat. Ia tidak pernah membuka ingress publik sendiri; akun admin harus di-*bootstrap* lewat SSH *port-forward* dulu, baru Caddy/konektor dijalankan manual seperti yang dicetak di akhir script. Script bersifat *idempotent*: dijalankan ulang tidak mengganti *secret* atau file konfigurasi yang sudah ada, dan menolak `COMPOSE_FILE` `.env` yang tidak memilih overlay mode yang diminta.
 
@@ -668,7 +666,7 @@ Instalasi manual di Opsi A/B **tidak memakai blueprint**. Provider dikonfigurasi
 
 **Mengapa opt-in:** blueprint memakai `state: present`. Setiap kali diterapkan ulang, ia **menimpa** field provider (external host, scope, signing key) dengan nilai dari file. Bila Anda mengubah provider lewat UI, blueprint aktif akan terus mengembalikannya. Karena itu mount-nya **tidak ada** di `docker-compose.override.yml`; ia hanya diaktifkan `setup.sh`, yang menyalin `docker-compose.blueprint.yml` dan menambahkannya ke `COMPOSE_FILE` di `.env`. Deployment manual tidak menambahkannya dan bebas dari blueprint. (Aktivasi manual: dari folder repo hasil `git clone`, salin kedua file itu ke `/opt/authentik`, tambahkan `:docker-compose.blueprint.yml` di `COMPOSE_FILE`, lalu `docker compose up -d server worker`.)
 
-Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori *custom*, *packaged defaults* Authentik tidak tertimpa. Sesuai dokumentasi resmi, *worker* melakukan *auto-discovery*: file baru otomatis dibuat *instance*-nya dan diterapkan; perubahan file memicu *apply* ulang. Urutan dependensi (flow *implicit-consent* + *scope mappings* sistem) dijamin lewat entri `metaapplyblueprint` karena *discovery order* tidak dijamin. *Signing key* dipilih lewat lookup `!Find` ke key pair internal bawaan Authentik (`goauthentik.io/crypto/jwt-managed`, RSA) — blueprint tidak bisa membuat key pair RSA sendiri, dan Poznote hanya menerima JWKS `kty=RSA`. Provider OAuth2 Poznote sengaja **tidak** di-*attach* ke outpost (outpost proxy menolak non-ProxyProvider), sehingga tidak muncul di daftar aplikasi outpost. Blueprint dibuat dari pengalaman deployment nyata, bukan contoh kosong.
+Mount-nya ke `/blueprints/custom/demo.yaml` pada `server`+`worker`, subdirektori *custom*, *packaged defaults* Authentik tidak tertimpa. Sesuai dokumentasi resmi, *worker* melakukan *auto-discovery*: file baru otomatis dibuat *instance*-nya dan diterapkan; perubahan file memicu *apply* ulang. Urutan dependensi (flow *implicit-consent* + *scope mappings* sistem) dijamin lewat entri `metaapplyblueprint` karena *discovery order* tidak dijamin. *Signing key* dipilih lewat lookup `!Find` ke key pair internal bawaan Authentik (`goauthentik.io/crypto/jwt-managed`, RSA) — blueprint tidak bisa membuat key pair RSA sendiri, dan Poznote hanya menerima JWKS `kty=RSA`. Provider OAuth2 Poznote sengaja **tidak** di-*attach* ke outpost (outpost proxy menolak non-ProxyProvider), sehingga tidak muncul di daftar aplikasi outpost.
 
 
 
