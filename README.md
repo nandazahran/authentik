@@ -81,31 +81,40 @@ Caddy mengambil sertifikat ACME otomatis pada Opsi A, atau menerima HTTP interna
 | Yang bekerja | Caddy + Authentik | Aplikasi + Authentik |
 | Contoh pada demo | IT-Tools | Poznote |
 
+**Forward auth** — Caddy bertanya ke Authentik pada setiap permintaan; IT-Tools tidak pernah tahu soal login:
+
 ```mermaid
 sequenceDiagram
-    accTitle: Alur forward auth dan OIDC
-    accDescr: Forward auth memeriksa sesi ke Authentik pada setiap permintaan ke IT-Tools. OIDC membuat Poznote memulai permintaan authorize sekali, menukar authorization code menjadi ID token, lalu membuat sesinya sendiri.
+    accTitle: Alur forward auth
+    accDescr: Caddy memeriksa sesi ke Authentik pada setiap permintaan ke IT-Tools, lalu meneruskan permintaan beserta header identitas.
 
     participant B as Browser
     participant C as Caddy
     participant A as Authentik
     participant T as it-tools
-    participant P as poznote
 
-    Note over B,A: Belum login → diarahkan ke halaman login Authentik
-
-    Note over B,A: Forward auth — dicek tiap permintaan
     B->>C: GET tools.*
     C->>A: sesi valid?
-    A-->>C: 200 + header identitas
-    C->>T: reverse_proxy
-    T-->>B: halaman IT-Tools
+    A-->>C: 200
+    C->>T: reverse_proxy + header identitas
+    T-->>B: halaman
+```
 
-    Note over B,A: OIDC — Poznote yang memulai
+**OIDC** — Poznote yang memulai; tukar-menukar token terjadi sekali, tanpa Caddy:
+
+```mermaid
+sequenceDiagram
+    accTitle: Alur OIDC
+    accDescr: Poznote mengirim browser ke Authentik, menerima authorization code, menukarnya di back-channel dengan client_secret, lalu mendapat ID token dan access token yang ditandatangani JWKS RSA.
+
+    participant B as Browser
+    participant A as Authentik
+    participant P as poznote
+
     B->>P: klik Continue with Authentik
-    P->>A: authorize
+    P->>A: authorize (front-channel)
     A-->>P: authorization code
-    P->>A: tukar code + client_secret
+    P->>A: tukar code + client_secret (back-channel)
     A-->>P: ID token + access token (JWKS RSA)
     P-->>B: sesi Poznote
 ```
